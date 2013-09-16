@@ -14,7 +14,7 @@ namespace eop {
 		 * struct bbtree_node
 		 */
 		struct bbtree_node {
-			T value;
+			T const value;
 			bbtree_node* left;
 			bbtree_node* right;
 			bbtree_node* parent;
@@ -42,12 +42,20 @@ namespace eop {
 		public:
 			typedef T SourceType;
 		public:
-			coord(bbtree_node<T> const* n) : node(n) {}
+			coord(bbtree_node* n) : node(n) {}
 			~coord() {}
 
-			coord(coord const& other) node(other.node) {}
+			coord(coord const& other) : node(other.node) {}
 			coord& operator= (coord const& other) {
 				node = other.node;
+			}
+
+			bool operator== (coord const& other) {
+				return node == other.node;
+			}
+
+			bool operator!= (coord const& other) {
+				return !(*this == other);
 			}
 
 			bool empty() const {
@@ -84,7 +92,7 @@ namespace eop {
 
 		private:
 			friend class bbtree;
-			bbtree_node<T> const* node;
+			bbtree_node* node;
 		};
 
 	public:
@@ -108,11 +116,11 @@ namespace eop {
 		}
 
 		coord insert_left(coord parent, T const& value) {
-			return coord(parent->node->insert_left(value));
+			return coord(parent.node->insert_left(value));
 		}
 
 		coord insert_right(coord parent, T const& value) {
-			return coord(parent->node->insert_right(value));
+			return coord(parent.node->insert_right(value));
 		}
 
 	private:
@@ -120,7 +128,7 @@ namespace eop {
 		bbtree& operator= (bbtree const&);
 
 	private:
-		bbtree_node<T>* root;
+		bbtree_node* root;
 	};
 
 }

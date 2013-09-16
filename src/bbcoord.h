@@ -62,7 +62,7 @@ namespace eop {
 		NEED(has_predecessor(coord));
 
 		Coord pre = predecessor(coord);
-		if (has_left_successor(pre) && left_successor(pre) == cooord)
+		if (has_left_successor(pre) && left_successor(pre) == coord)
 			return true;
 		return false;
 	}
@@ -73,7 +73,7 @@ namespace eop {
 		NEED(has_predecessor(coord));
 
 		Coord pre = predecessor(coord);
-		if (has_right_successor(pre) && right_successor(pre) == cooord)
+		if (has_right_successor(pre) && right_successor(pre) == coord)
 			return true;
 		return false;
 	}
@@ -110,9 +110,9 @@ namespace eop {
 			if (!has_predecessor(c)) {
 				return false;  // reach the end
 			}
-			if (is_left_predecessor(c)) {
+			if (is_left_successor(c)) {
 				visit = IN;
-			} else if (is_right_predecessor(c)) {
+			} else if (is_right_successor(c)) {
 				visit = POST;
 			}
 			c = predecessor(c);
@@ -132,27 +132,27 @@ namespace eop {
 		if (visit == PRE) f(root);
 		do {
 			traverse_step(c, v);
-			f(c, v);
+			if (visit == v) f(c);
 		} while (c != root || v != POST);
 	}
 
-	template <typename C, typename f>
+	template <typename C, typename F>
 	void traverse_coord_visit_type(C const& root, F f, VISIT_TYPE visit) {
 		if (!empty(root))
 			traverse_coord_visit_type_nonempty(root, f, visit);
 	}
 
-	template <typename C, typename f>
+	template <typename C, typename F>
 	void traverse_coord_pre(C const& root, F f) {
 		traverse_coord_visit_type(root, f, PRE);
 	}
 
-	template <typename C, typename f>
+	template <typename C, typename F>
 	void traverse_coord_in(C const& root, F f) {
 		traverse_coord_visit_type(root, f, IN);
 	}
 
-	template <typename C, typename f>
+	template <typename C, typename F>
 	void traverse_coord_post(C const& root, F f) {
 		traverse_coord_visit_type(root, f, POST);
 	}
@@ -172,24 +172,24 @@ namespace eop {
 		F f;
 	};
 
-	template <typename C, typename f>
+	template <typename C, typename F>
 	void traverse_visit_type(C const& root, F f, VISIT_TYPE visit) {
 		if (!empty(root))
 			traverse_coord_visit_type_nonempty(
-					root, f_source(f), visit);
+					root, f_source<C, F>(f), visit);
 	}
 
-	template <typename C, typename f>
+	template <typename C, typename F>
 	void traverse_pre(C const& root, F f) {
 		traverse_visit_type(root, f, PRE);
 	}
 
-	template <typename C, typename f>
+	template <typename C, typename F>
 	void traverse_in(C const& root, F f) {
 		traverse_visit_type(root, f, IN);
 	}
 
-	template <typename C, typename f>
+	template <typename C, typename F>
 	void traverse_post(C const& root, F f) {
 		traverse_visit_type(root, f, POST);
 	}
