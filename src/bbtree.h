@@ -19,7 +19,7 @@ namespace eop {
 			bbtree_node* right;
 			bbtree_node* parent;
 			bbtree_node(T const& v, bbtree_node* p=NULL)
-				: value(v), parent(p) {}
+				: value(v), left(NULL), right(NULL), parent(p) {}
 			~bbtree_node() {
 				delete left;
 				delete right;
