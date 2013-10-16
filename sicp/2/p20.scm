@@ -1,0 +1,16 @@
+(define (same-parity a . l)
+  (define (filter0 predicate l)
+    (cond ((null? l)
+           '())
+          ((predicate (car l))
+           (cons (car l) (filter0 predicate (cdr l))))
+          (else
+            (filter0 predicate (cdr l)))))
+  (if (even? a)
+    (filter0 even? (cons a l))
+    (filter0 odd? (cons a l))))
+
+(display (same-parity 1 2 3 4 5 6 7))
+(newline)
+(display (same-parity 2 3 4 5 6 7))
+(newline)

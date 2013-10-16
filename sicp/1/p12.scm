@@ -1,0 +1,12 @@
+(define (psk r c)
+  (cond ((< c 1) 0)
+        ((> c r) 0)
+        ((= r 1) 1)
+        (else (+ (psk (- r 1) (- c 1)) (psk (- r 1) c)))))
+
+(display (psk 4 2))
+(newline)
+(display (psk 5 3))
+(newline)
+(display (psk 6 4))
+(newline)
