@@ -27,6 +27,10 @@
 (define mt? null?)
 (define primitive-operations (list
               (cons '+ +)
+              (cons '- -)
+              (cons '* *)
+              (cons '/ quotient)
+              (cons '% remainder)
               ))
 
 ; ec-pair: expression-continuation pair
