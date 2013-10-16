@@ -1,7 +1,21 @@
 ;
 
+(define (new-printer)
+  (define step_num 1)
+  (lambda (ec-pair)
+    (display "\t")(display step_num)(display ": ")
+    (set! step_num (+ step_num 1))
+    (display '<)(display (car ec-pair))(display '>)
+    (display "  ")
+    (display '<)(display (cdr ec-pair))(display '>)
+    (newline)))
+
 (define (eval-ck expression)
+  (define printer (new-printer))
   (define (iter ec-pair)
+    ; Show the reduction
+    (printer ec-pair)
+    ;;;;;;;;;;;;;;;;;;;;
     (let ((expr (car ec-pair))
           (cont (cdr ec-pair)))
       (if (and (value? expr) (mt? cont))
