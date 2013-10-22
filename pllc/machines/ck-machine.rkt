@@ -1,17 +1,17 @@
-;
+(load "lib.rkt")
 
 (define MAX-STEPS 50)
 
 (define (new-printer)
-  (define step_num 1)
+  (define step-num 1)
   (lambda (ec-pair)
-    (display "\t")(display step_num)(display ": ")
+    (display "\t")(display step-num)(display ": ")
     (display '<)(display (car ec-pair))(display '>)
     (display "  ")
     (display '<)(display (cdr ec-pair))(display '>)
     (newline)
-    (set! step_num (+ step_num 1))
-    (if (> step_num MAX-STEPS)
+    (set! step-num (+ step-num 1))
+    (if (> step-num MAX-STEPS)
       (error "Reach MAX-STEPS:" MAX-STEPS)
       (void))))
 
@@ -25,21 +25,11 @@
           (cont (cdr ec-pair)))
       (if (and (value? expr) (mt? cont))
         expr
-        (iter (reduce-ck1 ec-pair)))))
+        (iter (reduce-ck ec-pair)))))
   (iter (cons expression mt)))
 
-(define mt '())
-(define mt? null?)
-(define primitive-operations (list
-              (cons '+ +)
-              (cons '- -)
-              (cons '* *)
-              (cons '/ quotient)
-              (cons '% remainder)
-              ))
-
 ; ec-pair: expression-continuation pair
-(define (reduce-ck1 ec-pair)
+(define (reduce-ck ec-pair)
   (let ((expression (car ec-pair))
         (continuation (cdr ec-pair)))
     (if (value? expression)
@@ -61,7 +51,7 @@
                   (list 'opd (cons expression values-op) (cdr rest) k))))
              ; else error
              (else
-               (error "Unknown continuation -- REDUCE-CK1" continuation)))
+               (error "Unknown continuation -- REDUCE-CK" continuation)))
       (let ((f (car expression))
             (as (cdr expression)))
         (if (primitive-operation? f)
@@ -70,38 +60,6 @@
             (cons f (list 'arg (car as) continuation))
             (error "application should have just one argument -- REDUCE-CK1" expression)))))))
 
-(define (lambda? exp) (and (pair? exp) (eq? (car exp) 'lambda)))
-(define (variable? exp) (symbol? exp))
-(define (constant? exp) (number? exp))
-(define (value? v) (or (lambda? v) (constant? v) (variable? v)))
-
-; assert (variable? a) and (variable? b)
-(define (same-variable? a b) (eq? a b))
-
-(define (beta-reduce M x v)
-  (match M
-         ((? variable? x0) (if (same-variable? x0 x) v x0))
-         ((? constant? b) b)
-         (`(lambda (,x0) ,body)
-          (if (same-variable? x0 x)
-            M
-            `(lambda (,x0) ,(beta-reduce body x v))))
-         ((? primitive-operation? o) o)
-         ((? pair? application)
-          (map (lambda (m) (beta-reduce m x v)) application))
-         (else
-           (error "Unknown M type -- BETA-REDUCE" M))))
-
-(define (search-operation op)
-  (define (iter ops)
-    (cond
-      ((null? ops) #f)
-      ((eq? op (caar ops)) (cdar ops))
-      (else (iter (cdr ops)))))
-  (iter primitive-operations))
-
-(define (primitive-operation? f) (search-operation f))
-
 (define (reverse-primitive-apply l)
   (define (iter op as)
     (if (null? (cdr op))
@@ -109,9 +67,5 @@
       (iter (cdr op) (cons (car op) as))))
   (iter l '()))
 
-(define (primitive-apply op as)
-  (apply (search-operation op) as))
-
-
-(load "driver-loop.rkt")
+; Run!
 (driver-loop eval-ck)
