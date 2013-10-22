@@ -1,14 +1,19 @@
 ;
 
+(define MAX-STEPS 50)
+
 (define (new-printer)
   (define step_num 1)
   (lambda (ec-pair)
     (display "\t")(display step_num)(display ": ")
-    (set! step_num (+ step_num 1))
     (display '<)(display (car ec-pair))(display '>)
     (display "  ")
     (display '<)(display (cdr ec-pair))(display '>)
-    (newline)))
+    (newline)
+    (set! step_num (+ step_num 1))
+    (if (> step_num MAX-STEPS)
+      (error "Reach MAX-STEPS:" MAX-STEPS)
+      (void))))
 
 (define (eval-ck expression)
   (define printer (new-printer))
@@ -106,3 +111,7 @@
 
 (define (primitive-apply op as)
   (apply (search-operation op) as))
+
+
+(load "driver-loop.rkt")
+(driver-loop eval-ck)
