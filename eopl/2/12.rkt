@@ -2,8 +2,8 @@
 
 (#%require "lib.rkt")
 
-; Constructors: empty-stack, push, pop
-; Observers: top, empty-stack?
+; Constructors: empty-stack, push
+; Observers: pop, top, empty-stack?
 
 (define (report-empty-error)
   (eopl:error "The stack is empty"))
