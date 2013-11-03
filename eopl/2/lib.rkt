@@ -5,5 +5,15 @@
 (define (displayln o)
   (display o) (newline))
 
-(define (run-disp . exps)
-  (for-each displayln exps))
+(define-syntax run-disp
+  (syntax-rules
+    ()
+    ((_) 'done)
+    ((_ a rest ...)
+     (begin
+       (displayln a)
+       (run-disp rest ...)))))
+
+(define (pair a b) (cons a b))
+(define (pair-fst p) (car p))
+(define (pair-snd p) (cdr p))
