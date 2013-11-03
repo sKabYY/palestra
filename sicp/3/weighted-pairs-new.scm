@@ -3,7 +3,10 @@
 ; The following answers come from:
 ; http://eli.thegreenplace.net/2007/11/10/sicp-section-353/
 
+(define merge-count 0)
+
 (define (merge-weighted-new s1 s2 weight)
+  (set! merge-count (+ merge-count 1))
   (cond
     ((stream-null? s1) s2)
     ((stream-null? s2) s1)

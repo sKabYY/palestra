@@ -25,3 +25,4 @@
 (define ramanujan (filter-the-same sums))
 
 (stream-for-n println ramanujan 6)
+(newline)

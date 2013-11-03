@@ -4,5 +4,6 @@
                              (lambda (i j) (+ i j))))
 
 (println "test)")
-(stream-for-n println test 20)
+(stream-for-n println test 100)
 (newline)
+(println merge-count)
