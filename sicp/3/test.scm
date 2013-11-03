@@ -1,13 +1,8 @@
-(load "weighted-pairs.scm")
+(load "weighted-pairs-new.scm")
 
-(define (weight i j) (+ i j))
+(define test (weighted-pairs-new integers integers
+                             (lambda (i j) (+ i j))))
 
-(define ipairs (weighted-pairs
-                 integers
-                 integers
-                 weight))
-
-(stream-for-n
-  (lambda (x) (if (> (car x) 9000) (println x) (void)))
-  ipairs
-  100000)
+(println "test)")
+(stream-for-n println test 20)
+(newline)
