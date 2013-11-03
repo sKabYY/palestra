@@ -3,7 +3,7 @@
 (#%provide (all-defined))
 
 (define (displayln o)
-  (display o) (newline))
+  (eopl:pretty-print o) (newline))
 
 (define-syntax run-disp
   (syntax-rules
