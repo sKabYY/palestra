@@ -8,6 +8,9 @@
 ;            ::= Identifier
 ;            ::= let {Identifier = Expression}* in Expression
 ;
+; ExpVal: Number, Boolean, List
+; DenVal = ExpVal
+;
 ; primitive-procedure: minus, diff(-), addition(+), ,multiplication(*),
 ;                      quotient, remainder,
 ;                      zero?, equal?, greater?, less?,
@@ -46,3 +49,29 @@
     (vars (list-of-type identifier?))
     (exps (list-of-type expression?))
     (body expression?)))
+
+(define-datatype expval expval?
+  (num-val
+    (num number?))
+  (bool-val
+    (bool boolean?))
+  (list-val
+    (lst list?)))
+
+(define (report-expval-extractor-error type val)
+  (error "Type error:" val type))
+
+(define (expval->num val)
+  (cases expval val
+    (num-val (num) num)
+    (else (report-expval-extractor-error 'num val))))
+
+(define (expval->bool val)
+  (cases expval val
+    (bool-val (bool) bool)
+    (else (report-expval-extractor-error 'bool val))))
+
+(define (expval->list val)
+  (cases expval val
+    (list-val (lst) lst)
+    (else (report-expval-extractor-error 'list val))))
