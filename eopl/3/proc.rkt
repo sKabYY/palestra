@@ -186,10 +186,11 @@
           (value-of
             body
             (extend-all-env env list-of-var list-of-val))
-          (report-arguments-not-match nvars nvals))))))
+          (report-arguments-not-match
+            list-of-var list-of-val))))))
 
-(define (report-arguments-not-match nvars nvals)
-  (eopl:error "args not match" nvars nvals))
+(define (report-arguments-not-match vars vals)
+  (eopl:error "args not match" vars vals))
 
 ; environment ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype environment environment?
@@ -345,5 +346,28 @@ in let f = proc (z) -(z, x)
 
 ;"let double = proc (x) if zero?(x) then 0 else +(2, (double -(x, 1)))
 ;in (double 12)"
+
+"let makemult = proc (maker)
+                proc (x)
+                 if zero?(x)
+                 then 0
+                 else +(4, ((maker maker) -(x, 1)))
+in let times4 = proc (x) ((makemult makemult) x)
+   in (times4 3)"
+
+"let addx = proc (y) proc (x) +(x, y)
+in let add1 = (addx 1)
+   in (add1 12)"
+
+"let Y = proc (f)
+         (proc (u) (u u)
+          proc (x)
+           (f proc (v) ((x x) v)))
+in let double = (Y proc (d)
+                    proc (x)
+                     if zero?(x)
+                     then 0
+                     else +(2, (d -(x, 1))))
+   in (double 12)"
 
     ))
