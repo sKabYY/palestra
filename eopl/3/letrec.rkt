@@ -6,12 +6,15 @@
 ; Program ::= Expression
 ;
 ; Expression ::= Number
-;            ::= primitive-procedure({Expression}*)
+;            ::= primitive-procedure({Expression}*(,))
+;            ::= proc ({Identifier}*(,)) Expression
+;            ::= (Expression {Expression}*)
 ;            ::= if Expression then Expression else Expression
 ;            ::= Identifier
-;            ::= let {Identifier = Expression}* in Expression
+;            ::= let {Identifier = Expression}*(,) in Expression
+;            ::= letrec {Identifier ({Identifier}*(,)) = Expression}*(,) in Expression
 ;
-; ExpVal: Number, Boolean, List
+; ExpVal: Number, Boolean, List, Proc
 ; DenVal = ExpVal
 ;
 ; primitive-procedures: minus, diff(-), addition(+), ,multiplication(*),
@@ -43,13 +46,28 @@
     (expression
       (primitive
         "(" (separated-list expression ",") ")")
-      apply-exp)
+      apply-primitive-exp)
+    (expression
+      ("proc" "(" (separated-list identifier ",") ")"
+       expression)
+      proc-exp)
+    (expression
+      ("(" expression (arbno expression) ")")
+      call-exp)
     (expression
       ("if" expression "then" expression "else" expression)
       if-exp)
     (expression
       ("let" (separated-list identifier "=" expression ",") "in" expression)
       let-exp)
+    (expression
+      ("letrec"
+       (separated-list
+         identifier
+         "(" (separated-list identifier ",") ")" "=" expression
+         ",")
+       "in" expression)
+      letrec-exp)
     (primitive ("+") add-prim)
     (primitive ("-") diff-prim)
     (primitive ("*") mult-prim)
@@ -73,9 +91,9 @@
   (sllgen:make-string-parser
     scanner-spec grammar-spec))
 
-;(eopl:pretty-print
-;  (sllgen:list-define-datatypes
-;    scanner-spec grammar-spec))
+(eopl:pretty-print
+  (sllgen:list-define-datatypes
+    scanner-spec grammar-spec))
 ;
 ;(define test-parse
 ;  (sllgen:make-rep-loop
@@ -92,15 +110,12 @@
   (bool-val
     (bool boolean?))
   (list-val
-    (lst list0?)))
+    (lst list0?))
+  (proc-val
+    (proc proc?)))
 
 (define (report-expval-extractor-error type val)
   (eopl:error "Type error:" val type))
-
-(define (minus val)
-  (cases expval val
-    (num-val (num) (num-val (- num)))
-    (else report-expval-extractor-error 'num val)))
 
 (define (expval->num val)
   (cases expval val
@@ -116,6 +131,16 @@
   (cases expval val
     (list-val (lst) lst)
     (else (report-expval-extractor-error 'list val))))
+
+(define (expval->proc val)
+  (cases expval val
+    (proc-val (proc) proc)
+    (else (report-expval-extractor-error 'proc val))))
+
+(define (minus val)
+  (cases expval val
+    (num-val (num) (num-val (- num)))
+    (else report-expval-extractor-error 'num val)))
 
 ; list ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype list0 list0?
@@ -157,32 +182,79 @@
     the-empty-list
     (cons0 (car elems) (apply mklist (cdr elems)))))
 
+; procedure ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define-datatype proc0 proc?
+  (procedure
+    (list-of-var (list-of symbol?))
+    (body expression?)
+    (env environment?)))
+
+(define (proc-val-procedure args body env)
+  (proc-val (procedure args body env)))
+
+(define (apply-proc proc list-of-val)
+  (cases proc0 proc
+    (procedure (list-of-var body env)
+      (let ((nvars (length list-of-var))
+            (nvals (length list-of-val)))
+        (if (= nvars nvals)
+          (value-of
+            body
+            (extend-env env list-of-var list-of-val))
+          (report-arguments-not-match
+            list-of-var list-of-val))))))
+
+(define (report-arguments-not-match vars vals)
+  (eopl:error "args not match" vars vals))
+
 ; environment ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype environment environment?
   (empty-env)
   (extend-env
+    ; assert (= (length list-of-symbol) (length list-of-exp))
     (enclosing-environment environment?)
-    (var symbol?)
-    (val expval?)))
+    (list-of-var (list-of symbol?))
+    (list-of-val (list-of expval?)))
+  (extend-env-rec
+    ; assert (= (length list-of-name) (length list-of-args) (length list-of-body))
+    (enclosing-environment environment?)
+    (list-of-name (list-of symbol?))
+    (list-of-args (list-of (list-of symbol?)))
+    (list-of-body (list-of expression?))))
 
 (define (report-unbound-var search-var)
   (eopl:error "Unbound variable" search-var))
 
-(define (extend-all-env env list-of-symbol list-of-exp)
-  (if (null? list-of-symbol)
-    env
-    (extend-all-env
-      (extend-env env (car list-of-symbol) (car list-of-exp))
-      (cdr list-of-symbol)
-      (cdr list-of-exp))))
+(define (search-first search-var constructor enclosing-env vars . rest)
+  (if (null? vars)
+    (apply-env enclosing-env search-var)
+    (if (eqv? search-var (car vars))
+      (apply constructor (map car rest))
+      (apply search-first
+             search-var
+             constructor
+             enclosing-env (cdr vars) (map cdr rest)))))
 
 (define (apply-env env search-var)
+  (define (search-vars enclosing-env vars vals)
+    (search-first search-var (lambda (x) x) enclosing-env vars vals))
+  (define (search-rec-vars enclosing-env
+                           list-of-name list-of-args list-of-body)
+    (search-first
+      search-var
+      (lambda (args body) (proc-val-procedure args body env))
+      enclosing-env
+      list-of-name list-of-args list-of-body))
   (cases environment env
     (empty-env () (report-unbound-var search-var))
-    (extend-env (enclosing-env var val)
-      (if (eqv? var search-var)
-        val
-        (apply-env enclosing-env search-var)))))
+    (extend-env (enclosing-env vars vals)
+      (search-vars enclosing-env vars vals))
+    (extend-env-rec (enclosing-env
+                      list-of-name
+                      list-of-args
+                      list-of-body)
+      (search-rec-vars enclosing-env
+                       list-of-name list-of-args list-of-body))))
 
 ; value-of ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define (value-of-program pgm)
@@ -196,26 +268,40 @@
   (cases expression exp
     (number-exp (number) (num-val number))
     (var-exp (identifier) (apply-env env identifier))
-    (apply-exp (prim list-of-exp)
+    (apply-primitive-exp (prim list-of-exp)
       (apply-primitive
         prim
         (value-of-list-of-exp list-of-exp)))
+    (proc-exp (list-of-var body)
+      (proc-val-procedure list-of-var body env))
+    (call-exp (rator rands)
+      (apply-proc
+        (expval->proc
+          (value-of rator env))
+        (value-of-list-of-exp rands)))
     (if-exp (exp1 exp2 exp3)
       (if (expval->bool (value-of exp1 env))
         (value-of exp2 env)
         (value-of exp3 env)))
     (let-exp (list-of-symbol list-of-exp body)
-      (let ((new-env (extend-all-env
+      (let ((new-env (extend-env
                        env
                        list-of-symbol
                        (value-of-list-of-exp list-of-exp))))
-        (value-of body new-env)))))
+        (value-of body new-env)))
+    (letrec-exp (list-of-name list-of-args list-of-body letrec-body)
+      (let ((new-env (extend-env-rec
+                       env
+                       list-of-name
+                       list-of-args
+                       list-of-body)))
+        (value-of letrec-body new-env)))))
 
 (define (init-env)
   (extend-env
     (empty-env)
-    'emptylist
-    the-empty-list))
+    (list 'emptylist)
+    (list the-empty-list)))
 
 (define (apply-primitive prim list-of-exp)
   (cases primitive prim

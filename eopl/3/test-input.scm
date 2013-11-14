@@ -1,5 +1,0 @@
-(define (iter)
-  (display (read))
-  (newline)
-  (iter))
-(iter)
