@@ -68,14 +68,25 @@ in let add1 = (addx 1)
 
 "let Y = proc (f)
          (proc (u) (u u)
-          proc (x)
-           (f proc (v) ((x x) v)))
+          proc (mk)
+           (f proc (v) ((mk mk) v)))
 in let double = (Y proc (d)
                     proc (x)
                      if zero?(x)
                      then 0
                      else +(2, (d -(x, 1))))
    in (double 12)"
+
+"let Y = proc (f)
+         (proc (u) (u u)
+          proc (mk)
+           (f proc (v1, v2) ((mk mk) v1 v2)))
+in let gcd = (Y proc (gcd0)
+                 proc (a, b)
+                  if zero?(a)
+                  then b
+                  else (gcd0 remainder(b, a) a))
+   in (gcd 144 12144)"
 
 ))
 
