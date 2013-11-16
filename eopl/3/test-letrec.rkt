@@ -4,8 +4,4 @@
 (#%require "lib.rkt")
 (#%require "test-cases.rkt")
 
-(interp-disp interp
-             (append
-               let-cases
-               proc-cases
-               letrec-cases))
+(interp-disp interp letrec-cases)

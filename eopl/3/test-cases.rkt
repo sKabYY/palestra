@@ -37,7 +37,7 @@
 
 ))
 
-(define proc-cases
+(define proc-cases1
   (list
 
 "(proc (x, y) +(x, y) 2 3)"
@@ -89,8 +89,9 @@ in let gcd = (Y proc (gcd0)
    in (gcd 144 12144)"
 
 ))
+(define proc-cases (append let-cases proc-cases1))
 
-(define letrec-cases
+(define letrec-cases1
   (list
 
 "letrec double (x) = if zero?(x) then 0 else +(2, (double -(x, 1)))
@@ -105,3 +106,4 @@ in (odd 13)"
 in (gcd 144 12144)"
 
 ))
+(define letrec-cases (append proc-cases letrec-cases1))
