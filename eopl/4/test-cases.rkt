@@ -160,3 +160,19 @@ in let x = 10, y = 20
 
 ))
 (define imprefs-cases (append letrec-cases imprefs-cases1))
+
+(define lazy-cases1
+  (list
+
+"let Y = proc (f)
+         (proc (x) (x x)
+          proc (x) (f (x x)))
+in let mkdouble = proc (d) proc (i)
+                   if zero?(i)
+                   then 0
+                   else +(2, (d -(i, 1)))
+   in ((Y mkdouble) 12)
+"
+
+))
+(define lazy-cases (append letrec-cases lazy-cases1))
