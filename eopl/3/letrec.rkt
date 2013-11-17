@@ -208,53 +208,66 @@
   (eopl:error "args not match" vars vals))
 
 ; environment ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define-datatype frame frame?
+  (frame-vec (vec vector?)))
+
+(define (a-frame vars vals)
+  (frame-vec (vector vars vals)))
+
+(define (empty-frame)
+  (a-frame '() '()))
+
+(define (frame-set! frm vars vals)
+  (cases frame frm
+    (frame-vec (vec)
+      (vector-set! vec 0 vars)
+      (vector-set! vec 1 vals))))
+
+(define (frame-vars frm)
+  (cases frame frm
+    (frame-vec (vec) (vector-ref vec 0))))
+
+(define (frame-vals frm)
+  (cases frame frm
+    (frame-vec (vec) (vector-ref vec 1))))
+
 (define-datatype environment environment?
   (empty-env)
-  (extend-env
-    ; assert (= (length list-of-symbol) (length list-of-exp))
-    (enclosing-environment environment?)
-    (list-of-var (list-of symbol?))
-    (list-of-val (list-of expval?)))
-  (extend-env-rec
-    ; assert (= (length list-of-name) (length list-of-args) (length list-of-body))
-    (enclosing-environment environment?)
-    (list-of-name (list-of symbol?))
-    (list-of-args (list-of (list-of symbol?)))
-    (list-of-body (list-of expression?))))
+  (extend-env-frame
+    (enclosing-environemt environment?)
+    (frm frame?)))
+
+(define (extend-env env vars vals)
+  ; assert (= (length list-of-symbol) (length list-of-exp))
+  (extend-env-frame env (a-frame vars vals)))
+
+(define (extend-env-rec env list-of-name list-of-args list-of-body)
+  ; assert (= (length list-of-name) (length list-of-args) (length list-of-body))
+  (let* ((frm (empty-frame))
+         (new-env (extend-env-frame env frm))
+         (mk-proc (lambda (args body)
+                    (proc-val-procedure args body new-env))))
+    (frame-set! frm
+                list-of-name
+                (map mk-proc list-of-args list-of-body))
+    new-env))
+
+(define (apply-env env search-var)
+  (define (search-env env)
+    (cases environment env
+      (empty-env () (report-unbound-var search-var))
+      (extend-env-frame (enclosing-env frm)
+        (search-frame (frame-vars frm) (frame-vals frm) enclosing-env))))
+  (define (search-frame vars vals next-env)
+    (if (null? vars)
+      (search-env next-env)
+      (if (eqv? search-var (car vars))
+        (car vals)
+        (search-frame (cdr vars) (cdr vals) next-env))))
+  (search-env env))
 
 (define (report-unbound-var search-var)
   (eopl:error "Unbound variable" search-var))
-
-(define (search-first search-var constructor enclosing-env vars . rest)
-  (if (null? vars)
-    (apply-env enclosing-env search-var)
-    (if (eqv? search-var (car vars))
-      (apply constructor (map car rest))
-      (apply search-first
-             search-var
-             constructor
-             enclosing-env (cdr vars) (map cdr rest)))))
-
-(define (apply-env env search-var)
-  (define (search-vars enclosing-env vars vals)
-    (search-first search-var (lambda (x) x) enclosing-env vars vals))
-  (define (search-rec-vars enclosing-env
-                           list-of-name list-of-args list-of-body)
-    (search-first
-      search-var
-      (lambda (args body) (proc-val-procedure args body env))
-      enclosing-env
-      list-of-name list-of-args list-of-body))
-  (cases environment env
-    (empty-env () (report-unbound-var search-var))
-    (extend-env (enclosing-env vars vals)
-      (search-vars enclosing-env vars vals))
-    (extend-env-rec (enclosing-env
-                      list-of-name
-                      list-of-args
-                      list-of-body)
-      (search-rec-vars enclosing-env
-                       list-of-name list-of-args list-of-body))))
 
 ; value-of ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define (value-of-program pgm)
