@@ -282,11 +282,7 @@
 
 (define (extend-env env vars vals)
   ; assert (= (length list-of-symbol) (length list-of-exp))
-  (define (ref-or-newref val)
-    (if (ref-val? val)
-      (expval->ref val)
-      (newref val)))
-  (extend-env-frame env (a-frame vars (map ref-or-newref vals))))
+  (extend-env-frame env (a-frame vars (map newref vals))))
 
 (define (extend-env-rec env list-of-name list-of-args list-of-body)
   ; assert (= (length list-of-name) (length list-of-args) (length list-of-body))

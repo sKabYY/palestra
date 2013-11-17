@@ -153,16 +153,10 @@ in let a = 3
    in begin (p a), a end"
 
 "let swap = proc (a, b)
-            let tmp = a
-            in begin set a = b, set b = tmp end
+            let tmp = deref(a)
+            in begin setref(a, deref(b)), setref(b, tmp) end
 in let x = 10, y = 20
    in begin (swap ref x ref y), -(x, y) end"
-
-"let swap = proc (a, b)
-            let tmp = a
-            in begin set a = b, set b = tmp end
-in let x = 10, y = 20
-   in begin (swap x y), -(x, y) end"
 
 ))
 (define imprefs-cases (append letrec-cases imprefs-cases1))
