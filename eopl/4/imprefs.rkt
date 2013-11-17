@@ -1,7 +1,7 @@
 #lang eopl
 
 (#%provide interp)
-(define (interp src) (value-of-program (scan&parse src)))
+(define (interp src) (value-of-program-dbg-store (scan&parse src)))
 
 ; Program ::= Expression
 ;
@@ -15,13 +15,17 @@
 ;            ::= letrec {Identifier ({Identifier}*(,)) = Expression}*(,) in Expression
 ;            ::= set Identifier = Expression
 ;            ::= begin {Expression}*(,) end
+;            ::= ref Identifier
 ;
-; ExpVal = Number + Boolean + Proc
+; MutPair = Ref(ExpVal) X Ref(ExpVal)
+; ExpVal = Number + Boolean + Proc + MutPair + Ref(ExpVal)
 ; DenVal = Ref(ExpVal)
 ;
 ; primitive-procedures: minus, diff(-), addition(+), ,multiplication(*),
 ;                       quotient, remainder,
 ;                       zero?, equal?, greater?, less?,
+;                       newpair, left, right, setleft, setright,
+;                       deref, setref,
 ;
 ; environment: symbol -> DenVal
 ; store: Ref -> ExpVal
@@ -70,6 +74,9 @@
     (expression
       ("begin" (separated-list expression ",") "end")
       begin-exp)
+    (expression
+      ("ref" identifier)
+      ref-exp)
     (primitive ("+") add-prim)
     (primitive ("-") diff-prim)
     (primitive ("*") mult-prim)
@@ -79,7 +86,14 @@
     (primitive ("zero?") zero?-prim)
     (primitive ("equal?") equal?-prim)
     (primitive ("greater?") greater?-prim)
-    (primitive ("less?") less?-prim)))
+    (primitive ("less?") less?-prim)
+    (primitive ("pair") pair-prim)
+    (primitive ("left") left-prim)
+    (primitive ("right") right-prim)
+    (primitive ("setleft") setleft-prim)
+    (primitive ("setright") setright-prim)
+    (primitive ("deref") deref-prim)
+    (primitive ("setref") setref-prim)))
 
 (sllgen:make-define-datatypes
   scanner-spec grammar-spec)
@@ -107,7 +121,16 @@
   (bool-val
     (bool boolean?))
   (proc-val
-    (proc proc?)))
+    (proc proc?))
+  (mutpair-val
+    (pair mutpair?))
+  (ref-val
+    (ref reference?)))
+
+(define (ref-val? val)
+  (cases expval val
+    (ref-val (ref) #t)
+    (else #f)))
 
 (define (report-expval-extractor-error type val)
   (eopl:error "Type error:" val type))
@@ -126,6 +149,16 @@
   (cases expval val
     (proc-val (proc) proc)
     (else (report-expval-extractor-error 'proc val))))
+
+(define (expval->mutpair val)
+  (cases expval val
+    (mutpair-val (pair) pair)
+    (else (report-expval-extractor-error 'mutpair val))))
+
+(define (expval->ref val)
+  (cases expval val
+    (ref-val (ref) ref)
+    (else (report-expval-extractor-error 'ref val))))
 
 (define (minus val)
   (cases expval val
@@ -156,6 +189,33 @@
 
 (define (report-arguments-not-match vars vals)
   (eopl:error "args not match" vars vals))
+
+; mutpair ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define-datatype mutpair mutpair?
+  (a-pair
+    (left-ref reference?)
+    (right-ref reference?)))
+
+(define (newpair val1 val2)
+  (a-pair (newref val1) (newref val2)))
+
+(define (mutpair-left pair)
+  (cases mutpair pair
+    (a-pair (l r) (deref l))))
+
+(define (mutpair-right pair)
+  (cases mutpair pair
+    (a-pair (l r) (deref r))))
+
+(define (mutpair-setleft pair val)
+  (cases mutpair pair
+    (a-pair (l r)
+      (setref! l val))))
+
+(define (mutpair-setright pair val)
+  (cases mutpair pair
+    (a-pair (l r)
+      (setref! r val))))
 
 ; store ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define the-store 'uninitialized)
@@ -222,7 +282,11 @@
 
 (define (extend-env env vars vals)
   ; assert (= (length list-of-symbol) (length list-of-exp))
-  (extend-env-frame env (a-frame vars (map newref vals))))
+  (define (ref-or-newref val)
+    (if (ref-val? val)
+      (expval->ref val)
+      (newref val)))
+  (extend-env-frame env (a-frame vars (map ref-or-newref vals))))
 
 (define (extend-env-rec env list-of-name list-of-args list-of-body)
   ; assert (= (length list-of-name) (length list-of-args) (length list-of-body))
@@ -259,6 +323,26 @@
     (a-program (exp1)
       (value-of exp1 (init-env)))))
 
+(define (print-store)
+  (define (iter count lst)
+    (if (null? lst)
+      'done
+      (begin
+        (display count)(display " ")
+        (eopl:pretty-print (car lst))
+        (iter (+ count 1) (cdr lst)))))
+  (display "###")(newline)
+  (iter 0 the-store)
+  (display "###")(newline))
+
+(define (value-of-program-dbg-store pgm)
+  (initialize-store!)
+  (let ((ret (cases program pgm
+               (a-program (exp1)
+                 (value-of exp1 (init-env))))))
+    (print-store)
+    ret))
+
 (define (value-of exp env)
   (define (value-of-list-of-exp list-of-exp)
     (map (lambda (e) (value-of e env)) list-of-exp))
@@ -278,8 +362,7 @@
       (proc-val-procedure list-of-var body env))
     (call-exp (rator rands)
       (apply-proc
-        (expval->proc
-          (value-of rator env))
+        (expval->proc (value-of rator env))
         (value-of-list-of-exp rands)))
     (if-exp (exp1 exp2 exp3)
       (if (expval->bool (value-of exp1 env))
@@ -305,7 +388,9 @@
     (begin-exp (list-of-exp)
       (if (null? list-of-exp)
         (report-no-exps-in-begin)
-        (get-last (value-of-list-of-exp list-of-exp))))))
+        (get-last (value-of-list-of-exp list-of-exp))))
+    (ref-exp (var)
+      (ref-val (apply-env env var)))))
 
 (define (report-no-exps-in-begin)
   (eopl:error "no expressions between begin and end"))
@@ -332,7 +417,30 @@
     (greater?-prim ()
       (bool-val (apply > (map expval->num list-of-expval))))
     (less?-prim ()
-      (bool-val (apply < (map expval->num list-of-expval))))))
+      (bool-val (apply < (map expval->num list-of-expval))))
+    (pair-prim ()
+      (mutpair-val (apply newpair list-of-expval)))
+    (left-prim ()
+      (apply mutpair-left (map expval->mutpair list-of-expval)))
+    (right-prim ()
+      (apply mutpair-right (map expval->mutpair list-of-expval)))
+    (setleft-prim () (apply setleft-wrapper list-of-expval))
+    (setright-prim () (apply setright-wrapper list-of-expval))
+    (deref-prim () (apply deref (map expval->ref list-of-expval)))
+    (setref-prim () (apply setref-wrapper list-of-expval))))
+
+
+(define (setleft-wrapper expv1 expv2)
+  (mutpair-setleft (expval->mutpair expv1) expv2)
+  42)
+
+(define (setright-wrapper expv1 expv2)
+  (mutpair-setright (expval->mutpair expv1) expv2)
+  42)
+
+(define (setref-wrapper expv1 expv2)
+  (setref! (expval->ref expv1) expv2)
+  42)
 
 ; read-eval-print ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define read-eval-print

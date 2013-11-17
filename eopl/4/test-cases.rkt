@@ -138,5 +138,31 @@ in let c1 = (new_counter), c2 = (new_counter)
 in let c1 = (new_counter), c2 = (new_counter)
    in begin (c1), (c1), (c2), *((c1), (c2)) end"  ; 3 * 2 = 6
 
+"let p = pair(11, 12) in *(left(p), right(p))"
+
+"let p = pair(11, 12)
+in begin setleft(p, 9), setright(p, 8), *(left(p), right(p)) end"
+
+"let glo = pair(11, 22)
+in let f = proc (p)
+            begin setright(p, left(p)), setleft(p, 99), -(left(p), right(p)) end
+   in (f glo)"
+
+"let p = proc (x) set x = 4
+in let a = 3
+   in begin (p a), a end"
+
+"let swap = proc (a, b)
+            let tmp = a
+            in begin set a = b, set b = tmp end
+in let x = 10, y = 20
+   in begin (swap ref x ref y), -(x, y) end"
+
+"let swap = proc (a, b)
+            let tmp = a
+            in begin set a = b, set b = tmp end
+in let x = 10, y = 20
+   in begin (swap x y), -(x, y) end"
+
 ))
 (define imprefs-cases (append letrec-cases imprefs-cases1))
