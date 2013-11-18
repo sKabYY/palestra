@@ -1,6 +1,6 @@
 #lang eopl
 
-(#%provide interp)
+(#%provide interp expval->value)
 (define (interp src) (value-of-program (scan&parse src)))
 ;(define (interp src) (value-of-program-dbg-store (scan&parse src)))
 
@@ -127,6 +127,16 @@
     (pair mutpair?))
   (ref-val
     (ref reference?)))
+
+(define (expval->value val)
+  (if (expval? val)
+    (cases expval val
+      (num-val (num) num)
+      (bool-val (bool) bool)
+      (proc-val (proc) proc)
+      (mutpair-val (pair) pair)
+      (ref-val (ref) ref))
+    val))
 
 (define (ref-val? val)
   (cases expval val

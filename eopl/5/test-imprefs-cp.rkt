@@ -4,4 +4,4 @@
 (#%require "lib.rkt")
 (#%require "test-cases.rkt")
 
-(interp-disp interp imprefs-cases)
+(interp-disp interp expval->value imprefs-cases)
