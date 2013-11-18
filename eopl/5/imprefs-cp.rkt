@@ -327,105 +327,100 @@
 ; continuation ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype continuation continuation?
   (end-cont)
-  (prim-cont
+  (a-cont
     (saved-cont continuation?)
     (env environment?)
+    (cfrm cont-frame?)))
+
+(define-datatype cont-frame cont-frame?
+  (prim-cf
     (prim primitive?)
     (rands (list-of expression?)))
-  (prim-cont1
-    (saved-cont continuation?)
-    (env environment?)
+  (prim-cf1
     (prim primitive?)
     (vals (list-of expval?))
     (rands (list-of expression?)))
-  (operator-cont
-    (saved-cont continuation?)
-    (env environment?)
+  (operator-cf
     (rands (list-of expression?)))
-  (operands-cont1
-    (saved-cont continuation?)
-    (env environment?)
+  (operands-cf1
     (rator expval?)
     (vals (list-of expval?))
     (rands (list-of expression?)))
-  (if-cont
-    (saved-cont continuation?)
-    (env environment?)
+  (if-cf
     (then-exp expression?)
     (else-exp expression?))
-  (let-cont
-    (saved-cont continuation?)
-    (env environment?)
+  (let-cf
     (vars (list-of symbol?))
     (rest-exps (list-of expression?))
     (body expression?))
-  (let-cont1
-    (saved-cont continuation?)
-    (env environment?)
+  (let-cf1
     (vars (list-of symbol?))
     (vals (list-of expval?))
     (exps (list-of expression?))
     (body expression?))
-  (assign-cont
-    (saved-cont continuation?)
-    (env environment?)
+  (assign-cf
     (var symbol?))
-  (begin-cont
-    (saved-cont continuation?)
-    (env environment?)
+  (begin-cf
     (exps (list-of expression?))))
 
 ; apply-cont: continuation X expval -> expval
 (define (apply-cont cont val)
   (cases continuation cont
     (end-cont () (display "Fin.\n") val)
-    (prim-cont (saved-cont env prim rands)
-      (apply-cont (prim-cont1 saved-cont env prim '() rands) val))
-    (prim-cont1 (saved-cont env prim vals rands)
-      (let ((new-vals (cons val vals)))
-        (if (null? rands)
-          (apply-cont saved-cont (apply-primitive prim (reverse new-vals)))
-          (value-of/k (car rands)
-                      env
-                      (prim-cont1
-                        saved-cont env prim new-vals (cdr rands))))))
-    (operator-cont (saved-cont env rands)
-      (if (null? rands)
-        (apply-proc/k (expval->proc val) '() saved-cont)
-        (value-of/k (car rands)
-                    env
-                    (operands-cont1 saved-cont env val '() (cdr rands)))))
-    (operands-cont1 (saved-cont env rator vals rands)
-      (let ((new-vals (cons val vals)))
-        (if (null? rands)
-          (apply-proc/k (expval->proc rator) (reverse new-vals) saved-cont)
-          (value-of/k (car rands)
-                      env
-                      (operands-cont1 saved-cont
-                                      env rator new-vals (cdr rands))))))
-    (if-cont (saved-cont env then-exp else-exp)
-      (if (expval->bool val)
-        (value-of/k then-exp env saved-cont)
-        (value-of/k else-exp env saved-cont)))
-    (let-cont (saved-cont env vars rest-exps body)
-      (apply-cont (let-cont1 saved-cont env vars '() rest-exps body)
-                  val))
-    (let-cont1 (saved-cont env vars vals exps body)
-      (let ((new-vals (cons val vals)))
-        (if (null? exps)
-          (value-of/k body
-                      (extend-env env vars (reverse new-vals))
-                      saved-cont)
-          (value-of/k (car exps)
-                      env
-                      (let-cont1 saved-cont env vars new-vals (cdr exps) body)))))
-    (assign-cont (saved-cont env var)
-      (setref! (apply-env env var) val)
-      (apply-cont saved-cont '**void**))
-    (begin-cont (saved-cont env exps)
-      (if (null? exps)
-        (apply-cont saved-cont val)
-        (value-of/k (car exps) env (begin-cont saved-cont env (cdr exps)))))))
+    (a-cont (saved-cont env cfrm)
+      (cases cont-frame cfrm
+        (prim-cf (prim rands)
+          (apply-cont (a-cont saved-cont env
+                              (prim-cf1 prim '() rands)) val))
+        (prim-cf1 (prim vals rands)
+          (let ((new-vals (cons val vals)))
+            (if (null? rands)
+              (apply-cont saved-cont (apply-primitive prim (reverse new-vals)))
+              (value-of/k (car rands)
+                          env
+                          (a-cont saved-cont env
+                                  (prim-cf1 prim new-vals (cdr rands)))))))
+        (operator-cf (rands)
+          (if (null? rands)
+            (apply-proc/k (expval->proc val) '() saved-cont)
+            (value-of/k (car rands)
+                        env
+                        (a-cont saved-cont env
+                                (operands-cf1 val '() (cdr rands))))))
+        (operands-cf1 (rator vals rands)
+          (let ((new-vals (cons val vals)))
+            (if (null? rands)
+              (apply-proc/k (expval->proc rator) (reverse new-vals) saved-cont)
+              (value-of/k (car rands)
+                          env
+                          (a-cont saved-cont env
+                                  (operands-cf1 rator new-vals (cdr rands)))))))
+        (if-cf (then-exp else-exp)
+          (if (expval->bool val)
+            (value-of/k then-exp env saved-cont)
+            (value-of/k else-exp env saved-cont)))
+        (let-cf (vars rest-exps body)
+          (apply-cont (a-cont saved-cont env
+                              (let-cf1 vars '() rest-exps body))
+                      val))
+        (let-cf1 (vars vals exps body)
+          (let ((new-vals (cons val vals)))
+            (if (null? exps)
+              (value-of/k body
+                          (extend-env env vars (reverse new-vals))
+                          saved-cont)
+              (value-of/k (car exps)
+                          env
+                          (a-cont saved-cont env
+                                  (let-cf1 vars new-vals (cdr exps) body))))))
+        (assign-cf (var)
+          (setref! (apply-env env var) val)
+          (apply-cont saved-cont '**void**))
+        (begin-cf (exps)
+          (if (null? exps)
+            (apply-cont saved-cont val)
+            (value-of/k (car exps) env (a-cont saved-cont env
+                                               (begin-cf (cdr exps))))))))))
 
 ; value-of ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define (value-of-program pgm)
@@ -468,18 +463,18 @@
         (value-of/k
           (car list-of-exp)
           env
-          (prim-cont cont env prim (cdr list-of-exp)))))
+          (a-cont cont env (prim-cf prim (cdr list-of-exp))))))
     (call-exp (rator rands)
-      (value-of/k rator env (operator-cont cont env rands)))
+      (value-of/k rator env (a-cont cont env (operator-cf rands))))
     (if-exp (exp1 exp2 exp3)
-      (value-of/k exp1 env (if-cont cont env exp2 exp3)))
+      (value-of/k exp1 env (a-cont cont env (if-cf exp2 exp3))))
     (let-exp (list-of-symbol list-of-exp body)
       (if (null? list-of-symbol)
         (value-of/k body env cont)
         (value-of/k
           (car list-of-exp)
           env
-          (let-cont cont env list-of-symbol (cdr list-of-exp) body))))
+          (a-cont cont env (let-cf list-of-symbol (cdr list-of-exp) body)))))
     (letrec-exp (list-of-name list-of-args list-of-body letrec-body)
       (let ((new-env (extend-env-rec
                        env
@@ -488,13 +483,13 @@
                        list-of-body)))
         (value-of/k letrec-body new-env cont)))
     (assign-exp (var exp)
-      (value-of/k exp env (assign-cont cont env var)))
+      (value-of/k exp env (a-cont cont env (assign-cf var))))
     (begin-exp (list-of-exp)
       (if (null? list-of-exp)
         (report-no-exps-in-begin)
         (value-of/k (car list-of-exp)
                     env
-                    (begin-cont cont env (cdr list-of-exp)))))
+                    (a-cont cont env (begin-cf (cdr list-of-exp))))))
     (ref-exp (var)
       (apply-cont cont (ref-val (apply-env env var))))))
 
