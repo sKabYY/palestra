@@ -146,3 +146,44 @@ in let x = 10, y = 20
 
 ))
 (define imprefs-cases (append letrec-cases imprefs-cases1))
+
+(define exception-cases1
+  (list
+
+"try 11 catch(e, c) 22" 11
+"try raise 22 catch(e, c) e" 22
+"+(12, letcc x in +(1, cc x 13))" 25
+
+"let p = proc(x)
+         try +(1, if zero?(x) then raise 999 else x)
+         catch(e, c) cc c e
+in (p 0)" 1000
+"let p = proc(x)
+         try +(1, if zero?(x) then raise 999 else x)
+         catch(e, c) cc c e
+in (p 10)" 11
+
+"let index = proc (n, lst)
+             letrec inner (lst)
+             = if zero?(left(lst))
+               then raise 99
+               else if equal?(n, left(lst))
+                    then 0
+                    else +(1, (inner right(lst)))
+             in try (inner lst)
+                catch (e, c) minus(1)
+in (index 5 pair(1, pair(2, pair(0, 0))))" -1
+
+"let index = proc (n, lst)
+             letrec inner (lst)
+             = if zero?(left(lst))
+               then raise 99
+               else if equal?(n, left(lst))
+                    then 0
+                    else +(1, (inner right(lst)))
+             in try (inner lst)
+                catch (e, c) minus(1)
+in (index 2 pair(1, pair(2, pair(0, 0))))" 1
+
+))
+(define exception-cases (append imprefs-cases exception-cases1))

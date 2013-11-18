@@ -17,6 +17,10 @@
 ;            ::= set Identifier = Expression
 ;            ::= begin {Expression}*(,) end
 ;            ::= ref Identifier
+;            ::= try Expression catch (Identifier, Identifier) Expression
+;            ::= raise Expression
+;            ::= cc Expression Expression
+;            ::= letcc Identifier in Expression
 ;
 ; MutPair = Ref(ExpVal) X Ref(ExpVal)
 ; ExpVal = Number + Boolean + Proc + MutPair + Ref(ExpVal)
@@ -78,6 +82,18 @@
     (expression
       ("ref" identifier)
       ref-exp)
+    (expression
+      ("try" expression "catch" "(" identifier "," identifier ")" expression)
+      try-exp)
+    (expression
+      ("raise" expression)
+      raise-exp)
+    (expression
+      ("cc" expression expression)
+      cc-exp)
+    (expression
+      ("letcc" identifier "in" expression)
+      letcc-exp)
     (primitive ("+") add-prim)
     (primitive ("-") diff-prim)
     (primitive ("*") mult-prim)
@@ -126,7 +142,9 @@
   (mutpair-val
     (pair mutpair?))
   (ref-val
-    (ref reference?)))
+    (ref reference?))
+  (cont-val
+    (cont continuation?)))
 
 (define (expval->value val)
   (if (expval? val)
@@ -135,7 +153,8 @@
       (bool-val (bool) bool)
       (proc-val (proc) proc)
       (mutpair-val (pair) pair)
-      (ref-val (ref) ref))
+      (ref-val (ref) ref)
+      (cont-val (cont) cont))
     val))
 
 (define (ref-val? val)
@@ -170,6 +189,11 @@
   (cases expval val
     (ref-val (ref) ref)
     (else (report-expval-extractor-error 'ref val))))
+
+(define (expval->cont val)
+  (cases expval val
+    (cont-val (cont) cont)
+    (else (report-expval-extractor-error 'cont val))))
 
 (define (minus val)
   (cases expval val
@@ -296,6 +320,9 @@
   ; assert (= (length list-of-symbol) (length list-of-exp))
   (extend-env-frame env (a-frame vars (map newref vals))))
 
+(define (extend-env-1 env var val)
+  (extend-env env (list var) (list val)))
+
 (define (extend-env-rec env list-of-name list-of-args list-of-body)
   ; assert (= (length list-of-name) (length list-of-args) (length list-of-body))
   (let* ((frm (empty-frame))
@@ -361,7 +388,16 @@
   (assign-cf
     (var symbol?))
   (begin-cf
-    (exps (list-of expression?))))
+    (exps (list-of expression?)))
+  (try-cf
+    (var symbol?)
+    (cont-var symbol?)
+    (handler-exp expression?))
+  (raise-cf)
+  (cc-cf
+    (exp expression?))
+  (ccval-cf
+    (cont continuation?)))
 
 ; apply-cont: continuation X expval -> expval
 (define (apply-cont cont val)
@@ -420,7 +456,34 @@
           (if (null? exps)
             (apply-cont saved-cont val)
             (value-of/k (car exps) env (a-cont saved-cont env
-                                               (begin-cf (cdr exps))))))))))
+                                               (begin-cf (cdr exps))))))
+        (try-cf (var cont-var handler-exp)
+          (apply-cont saved-cont val))
+        (raise-cf ()
+          (apply-handler val saved-cont))
+        (cc-cf (exp)
+          (value-of/k exp env (a-cont saved-cont env
+                                      (ccval-cf (expval->cont val)))))
+        (ccval-cf (applied-cont)
+          (apply-cont applied-cont val))))))
+
+(define (apply-handler val before-raised-cont)
+  (define (iter cont)
+    (cases continuation cont
+      (end-cont () (report-uncaught-exception val before-raised-cont))
+      (a-cont (saved-cont env cfrm)
+        (cases cont-frame cfrm
+          (try-cf (var cont-var handler-exp)
+            (value-of/k handler-exp
+                        (extend-env env
+                                    (list var cont-var)
+                                    (list val (cont-val before-raised-cont)))
+                        saved-cont))
+          (else (iter saved-cont))))))
+  (iter before-raised-cont))
+
+(define (report-uncaught-exception val cont)
+  (eopl:error "uncaught-expception:" val cont))
 
 ; value-of ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define (value-of-program pgm)
@@ -491,7 +554,18 @@
                     env
                     (a-cont cont env (begin-cf (cdr list-of-exp))))))
     (ref-exp (var)
-      (apply-cont cont (ref-val (apply-env env var))))))
+      (apply-cont cont (ref-val (apply-env env var))))
+    (try-exp (exp var cont-var handler-exp)
+      (value-of/k exp env (a-cont cont env
+                                  (try-cf var cont-var handler-exp))))
+    (raise-exp (exp)
+      (value-of/k exp env (a-cont cont env
+                                  (raise-cf))))
+    (cc-exp (exp1 exp2)
+      (value-of/k exp1 env (a-cont cont env
+                                   (cc-cf exp2))))
+    (letcc-exp (var exp)
+      (value-of/k exp (extend-env-1 env var (cont-val cont)) cont))))
 
 (define (report-no-exps-in-begin)
   (eopl:error "no expressions between begin and end"))
