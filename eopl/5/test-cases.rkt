@@ -25,7 +25,7 @@
 "if zero?(0) then +(1, 1) else -(1, 1)"
 "if zero?(1) then +(1, 1) else -(1, 1)"
 "let x = 12144 in x"
-"let x = 12, y = 3 in +(x, y)"
+"let x = 12, y = 3 in -(x, y)"
 "let x = 12 in let x = 13 in *(x, 2)"
 
 ))
@@ -101,27 +101,6 @@ in (gcd 144 12144)"
 ))
 (define letrec-cases (append proc-cases letrec-cases1))
 
-(define exprefs-cases1
-  (list
-
-"let g = newref(11) in deref(g)"
-"let g = newref(11) in setref(g, 12)"
-"let g = newref(11) in begin setref(g, 12), deref(g) end"
-"let g = newref(newref(11)) in deref(deref(g))"
-
-"let new_counter = proc ()
-                   let counter = newref(0)
-                   in proc ()
-                       begin
-                        setref(counter, +(1, deref(counter))),
-                        deref(counter)
-                       end
-in let c1 = (new_counter), c2 = (new_counter)
-   in begin (c1), (c1), (c2), *((c1), (c2)) end"  ; 3 * 2 = 6
-
-))
-(define exprefs-cases (append letrec-cases exprefs-cases1))
-
 (define imprefs-cases1
   (list
 
@@ -151,6 +130,9 @@ in let f = proc (p)
 "let p = proc (x) set x = 4
 in let a = 3
    in begin (p a), a end"
+
+"let f = proc (x, y) -(x, y)
+in (f 88 99)"
 
 "let x = 1
 in let p = ref x

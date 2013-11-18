@@ -2,6 +2,7 @@
 
 (#%provide interp)
 (define (interp src) (value-of-program (scan&parse src)))
+;(define (interp src) (value-of-program-dbg-store (scan&parse src)))
 
 ; Program ::= Expression
 ;
@@ -403,7 +404,7 @@
       (let ((new-vals (cons val vals)))
         (if (null? exps)
           (value-of/k body
-                      (extend-env env vars new-vals)
+                      (extend-env env vars (reverse new-vals))
                       saved-cont)
           (value-of/k (car exps)
                       env
