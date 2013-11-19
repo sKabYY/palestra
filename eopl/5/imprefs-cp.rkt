@@ -23,7 +23,7 @@
 ;            ::= letcc Identifier in Expression
 ;
 ; MutPair = Ref(ExpVal) X Ref(ExpVal)
-; ExpVal = Number + Boolean + Proc + MutPair + Ref(ExpVal)
+; ExpVal = Number + Boolean + Proc + MutPair + Continuation + Ref(ExpVal)
 ; DenVal = Ref(ExpVal)
 ;
 ; primitive-procedures: minus, diff(-), addition(+), ,multiplication(*),
