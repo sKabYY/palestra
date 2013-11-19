@@ -207,6 +207,10 @@ in call/cc(proc (return) (f return 0))" -999
          if zero?(x) then minus(999) else (return x)
 in call/cc(proc (return) (f return 111))" 111
 
+"+(12, letcc cont in let c = cont, cont = 0 in +(+(1, 2), cc c 21))" 33
+
+"let p = proc (c) cc c 111 in letcc cont in +(12, 34, (p cont))" 111
+
 ))
 
 (define imprefs-cp-cases (append imprefs-cases exception-cases1))

@@ -25,7 +25,7 @@
             (iter count (cddr sources) wrong)
             (begin
               (begin-yellow)
-              (display "WRONG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!~%")
+              (eopl:printf "WRONG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!~%")
               (end-color)
               (iter count (cddr sources) (+ wrong 1))))))))
   (let ((summary (iter 0 sources 0)))

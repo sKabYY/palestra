@@ -474,7 +474,7 @@
 ; apply-cont: continuation X expval -> expval
 (define (apply-cont cont val)
   (cases continuation cont
-    (end-cont () (display "Fin.~%") val)
+    (end-cont () (eopl:printf "Fin.~%") val)
     (a-cont (saved-cont env cfrm)
       (cases cont-frame cfrm
         (prim-cf (prim rands)
