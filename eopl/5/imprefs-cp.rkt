@@ -1,7 +1,24 @@
 #lang eopl
 
-(#%provide interp expval->value)
+(#%provide interp
+           interp/translation
+           expval->value
+           other-summary)
+
 (define (interp src) (value-of-program (scan&parse src)))
+
+(define (interp/translation src)
+  (value-of-program
+    (translate-program:letcc->call/cc
+      (scan&parse src))))
+
+(define times-of-using-letcc 0)
+(define times-of-using-cc 0)
+
+(define (other-summary)
+  (eopl:printf "letcc: ~a~%" times-of-using-letcc)
+  (eopl:printf "cc: ~a~%" times-of-using-cc))
+
 ;(define (interp src) (value-of-program-dbg-store (scan&parse src)))
 
 ; Program ::= Expression
@@ -133,6 +150,48 @@
 ;
 ;(test-parse)
 
+; translate: letcc and cc => call/cc ;;;;;;;;;;;;;;;;;;;;;;
+; cc cont val => (cont val)
+; letcc cont exp => call/cc(proc (cont) exp)
+(define (translate-program:letcc->call/cc pgm)
+  (cases program pgm
+    (a-program (exp)
+      (a-program (translation-of exp)))))
+
+(define (translation-of exp)
+  (cases expression exp
+    (apply-primitive-exp (prim exps)
+      (apply-primitive-exp prim
+                          (map translation-of exps)))
+    (proc-exp (vars body)
+      (proc-exp vars (translation-of body)))
+    (call-exp (rator rands)
+      (call-exp (translation-of rator) (map translation-of rands)))
+    (if-exp (exp1 exp2 exp3)
+      (if-exp (translation-of exp1)
+              (translation-of exp2)
+              (translation-of exp3)))
+    (let-exp (vars exps body)
+      (let-exp vars (map translation-of exps) (translation-of body)))
+    (letrec-exp (vars argss exps body)
+      (letrec-exp vars argss (map translation-of exps) (translation-of body)))
+    (assign-exp (var exp)
+      (assign-exp var (translation-of exp)))
+    (begin-exp (exps)
+      (begin-exp (map translation-of exps)))
+    (try-exp (exp err cont handler-exp)
+      (try-exp (translation-of exp) err cont (translation-of handler-exp)))
+    (raise-exp (exp)
+      (raise-exp (translation-of exp)))
+    (cc-exp (cont-exp exp)
+      (call-exp (translation-of cont-exp) (list (translation-of exp))))
+    (letcc-exp (var body)
+      (apply-primitive-exp
+        (call/cc-prim)
+        (list (proc-exp (list var) (translation-of body)))))
+    (else  ; number-exp, var-exp, ref-exp
+      exp)))
+
 ; expval ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype expval expval?
   (num-val
@@ -204,32 +263,37 @@
   (procedure
     (list-of-var (list-of symbol?))
     (body expression?)
-    (env environment?))
-  (cc-proc
-    (saved-cont continuation?)))
+    (env environment?)))
 
 (define (proc-val-procedure args body env)
   (proc-val (procedure args body env)))
 
-(define (proc-val-cc-proc cont)
-  (proc-val (cc-proc cont)))
+(define (apply-proc-or-cont/k val list-of-val cont)
+  (cases expval val
+    (cont-val (cont)
+      (if (= 1 (length list-of-val))
+        (apply-cont cont (car list-of-val))
+        (report-arguments-not-match '(val) list-of-val)))
+    (proc-val (proc)
+      (apply-proc/k proc list-of-val cont))
+    (else
+      (report-application-not-proc-or-cont val))))
+
+(define (report-application-not-proc-or-cont val)
+  (eopl:error "application-not-proc-or-cont" val))
 
 (define (apply-proc/k proc list-of-val cont)
-  (let ((nvals (length list-of-val)))
-    (cases proc0 proc
-      (procedure (list-of-var body env)
-        (let ((nvars (length list-of-var)))
-          (if (= nvars nvals)
-            (value-of/k
-              body
-              (extend-env env list-of-var list-of-val)
-              cont)
-            (report-arguments-not-match
-              list-of-var list-of-val))))
-      (cc-proc (saved-cont)
-        (if (= 1 nvals)
-          (apply-cont cont (car list-of-val))
-          (report-arguments-not-match '(v) list-of-val))))))
+  (cases proc0 proc
+    (procedure (list-of-var body env)
+      (let ((nvars (length list-of-var))
+            (nvals (length list-of-val)))
+        (if (= nvars nvals)
+          (value-of/k
+            body
+            (extend-env env list-of-var list-of-val)
+            cont)
+          (report-arguments-not-match
+            list-of-var list-of-val))))))
 
 (define (report-arguments-not-match vars vals)
   (eopl:error "args not match" vars vals))
@@ -410,7 +474,7 @@
 ; apply-cont: continuation X expval -> expval
 (define (apply-cont cont val)
   (cases continuation cont
-    (end-cont () (display "Fin.\n") val)
+    (end-cont () (display "Fin.~%") val)
     (a-cont (saved-cont env cfrm)
       (cases cont-frame cfrm
         (prim-cf (prim rands)
@@ -426,7 +490,7 @@
                                   (prim-cf1 prim new-vals (cdr rands)))))))
         (operator-cf (rands)
           (if (null? rands)
-            (apply-proc/k (expval->proc val) '() saved-cont)
+            (apply-proc-or-cont/k val '() saved-cont)
             (value-of/k (car rands)
                         env
                         (a-cont saved-cont env
@@ -434,7 +498,7 @@
         (operands-cf1 (rator vals rands)
           (let ((new-vals (cons val vals)))
             (if (null? rands)
-              (apply-proc/k (expval->proc rator) (reverse new-vals) saved-cont)
+              (apply-proc-or-cont/k rator (reverse new-vals) saved-cont)
               (value-of/k (car rands)
                           env
                           (a-cont saved-cont env
@@ -570,9 +634,11 @@
       (value-of/k exp env (a-cont cont env
                                   (raise-cf))))
     (cc-exp (exp1 exp2)
+      (set! times-of-using-cc (+ 1 times-of-using-cc))
       (value-of/k exp1 env (a-cont cont env
                                    (cc-cf exp2))))
     (letcc-exp (var exp)
+      (set! times-of-using-letcc (+ 1 times-of-using-letcc))
       (value-of/k exp (extend-env-1 env var (cont-val cont)) cont))))
 
 (define (report-no-exps-in-begin)
@@ -662,7 +728,7 @@
 
 (define (call/cc/expval cont val)
   (let ((proc (expval->proc val)))
-    (apply-proc/k proc (list (proc-val-cc-proc cont)) cont)))
+    (apply-proc/k proc (list (cont-val cont)) cont)))
 
 ; read-eval-print ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define read-eval-print

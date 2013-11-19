@@ -7,7 +7,7 @@
 (define (begin-yellow) (display "\033[93m"))
 (define (end-color) (display "\033[0m"))
 
-(define (interp-disp interp expval->value sources)
+(define (interp-disp interp expval->value sources other-summary)
   (define (iter prev-count sources wrong)
     (if (null? sources)
       (cons wrong prev-count)
@@ -25,8 +25,9 @@
             (iter count (cddr sources) wrong)
             (begin
               (begin-yellow)
-              (display "WRONG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n")
+              (display "WRONG!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!~%")
               (end-color)
               (iter count (cddr sources) (+ wrong 1))))))))
   (let ((summary (iter 0 sources 0)))
-    (eopl:printf "SUMMARY(wrong/total): ~a/~a.\n" (car summary) (cdr summary))))
+    (eopl:printf "SUMMARY(wrong/total): ~a/~a.~%" (car summary) (cdr summary))
+    (other-summary)))

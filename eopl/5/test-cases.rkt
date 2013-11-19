@@ -208,4 +208,5 @@ in call/cc(proc (return) (f return 0))" -999
 in call/cc(proc (return) (f return 111))" 111
 
 ))
-(define exception-cases (append imprefs-cases exception-cases1))
+
+(define imprefs-cp-cases (append imprefs-cases exception-cases1))
