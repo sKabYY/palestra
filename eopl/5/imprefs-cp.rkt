@@ -31,6 +31,7 @@
 ;                       zero?, equal?, greater?, less?,
 ;                       newpair, left, right, setleft, setright,
 ;                       deref, setref,
+;                       call/cc,
 ;
 ; environment: symbol -> DenVal
 ; store: Ref -> ExpVal
@@ -110,7 +111,8 @@
     (primitive ("setleft") setleft-prim)
     (primitive ("setright") setright-prim)
     (primitive ("deref") deref-prim)
-    (primitive ("setref") setref-prim)))
+    (primitive ("setref") setref-prim)
+    (primitive ("call/cc") call/cc-prim)))
 
 (sllgen:make-define-datatypes
   scanner-spec grammar-spec)
@@ -147,15 +149,17 @@
     (cont continuation?)))
 
 (define (expval->value val)
-  (if (expval? val)
-    (cases expval val
-      (num-val (num) num)
-      (bool-val (bool) bool)
-      (proc-val (proc) proc)
-      (mutpair-val (pair) pair)
-      (ref-val (ref) ref)
-      (cont-val (cont) cont))
-    val))
+  (cond ((expval? val)
+         (cases expval val
+           (num-val (num) num)
+           (bool-val (bool) bool)
+           (proc-val (proc) proc)
+           (mutpair-val (pair) pair)
+           (ref-val (ref) ref)
+           (cont-val (cont) cont)))
+        ((number? val) '==number==)
+        ((boolean? val) '==bool==)
+        (else val)))
 
 (define (ref-val? val)
   (cases expval val
@@ -194,11 +198,6 @@
   (cases expval val
     (cont-val (cont) cont)
     (else (report-expval-extractor-error 'cont val))))
-
-(define (minus val)
-  (cases expval val
-    (num-val (num) (num-val (- num)))
-    (else report-expval-extractor-error 'num val)))
 
 ; procedure ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype proc0 proc?
@@ -411,7 +410,7 @@
         (prim-cf1 (prim vals rands)
           (let ((new-vals (cons val vals)))
             (if (null? rands)
-              (apply-cont saved-cont (apply-primitive prim (reverse new-vals)))
+              (apply-primitive/k prim (reverse new-vals) saved-cont)
               (value-of/k (car rands)
                           env
                           (a-cont saved-cont env
@@ -522,7 +521,7 @@
       (apply-cont cont (proc-val-procedure list-of-var body env)))
     (apply-primitive-exp (prim list-of-exp)
       (if (null? list-of-exp)
-        (apply-cont cont (apply-primitive prim '()))
+        (apply-primitive/k prim '() cont)
         (value-of/k
           (car list-of-exp)
           env
@@ -572,50 +571,89 @@
 
 (define (init-env) (empty-env))
 
-(define (apply-primitive prim list-of-expval)
+(define (apply-primitive/k prim list-of-expval cont)
+  (define (>> prim/expval)
+    (apply-cont cont (apply prim/expval list-of-expval)))
   (cases primitive prim
-    (add-prim ()
-      (num-val (apply + (map expval->num list-of-expval))))
-    (diff-prim ()
-      (num-val (apply - (map expval->num list-of-expval))))
-    (mult-prim ()
-      (num-val (apply * (map expval->num list-of-expval))))
-    (minus-prim () (apply minus list-of-expval))
-    (quotient-prim ()
-      (num-val (apply quotient (map expval->num list-of-expval))))
-    (remainder-prim ()
-      (num-val (apply remainder (map expval->num list-of-expval))))
-    (zero?-prim ()
-      (bool-val (apply zero? (map expval->num list-of-expval))))
-    (equal?-prim ()
-      (bool-val (apply = (map expval->num list-of-expval))))
-    (greater?-prim ()
-      (bool-val (apply > (map expval->num list-of-expval))))
-    (less?-prim ()
-      (bool-val (apply < (map expval->num list-of-expval))))
-    (pair-prim ()
-      (mutpair-val (apply newpair list-of-expval)))
-    (left-prim ()
-      (apply mutpair-left (map expval->mutpair list-of-expval)))
-    (right-prim ()
-      (apply mutpair-right (map expval->mutpair list-of-expval)))
-    (setleft-prim () (apply setleft-wrapper list-of-expval))
-    (setright-prim () (apply setright-wrapper list-of-expval))
-    (deref-prim () (apply deref (map expval->ref list-of-expval)))
-    (setref-prim () (apply setref-wrapper list-of-expval))))
+    (add-prim () (>> add/expval))
+    (diff-prim () (>> diff/expval))
+    (mult-prim () (>> mult/expval))
+    (minus-prim () (>> minus/expval))
+    (quotient-prim () (>> quotient/expval))
+    (remainder-prim () (>> remainder/expval))
+    (zero?-prim () (>> zero?/expval))
+    (equal?-prim () (>> equal?/expval))
+    (greater?-prim () (>> greater?/expval))
+    (less?-prim () (>> less?/expval))
+    (pair-prim () (>> pair/expval))
+    (left-prim () (>> left/expval))
+    (right-prim () (>> right/expval))
+    (setleft-prim () (>> setleft/expval))
+    (setright-prim () (>> setright/expval))
+    (deref-prim () (>> deref/expval))
+    (setref-prim () (>> setref/expval))
+    (call/cc-prim ()
+      (apply call/cc/expval cont list-of-expval))))
 
+; primitive procedures ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (setleft-wrapper expv1 expv2)
-  (mutpair-setleft (expval->mutpair expv1) expv2)
+(define (add/expval . vals)
+  (num-val (apply + (map expval->num vals))))
+
+(define (diff/expval val1 val2)
+  (num-val (- (expval->num val1) (expval->num val2))))
+
+(define (mult/expval . vals)
+  (num-val (apply * (map expval->num vals))))
+
+(define (minus/expval val)
+  (num-val (- (expval->num val))))
+
+(define (quotient/expval val1 val2)
+  (num-val (quotient (expval->num val1) (expval->num val2))))
+
+(define (remainder/expval val1 val2)
+  (num-val (remainder (expval->num val1) (expval->num val2))))
+
+(define (zero?/expval val)
+  (bool-val (zero? (expval->num val))))
+
+(define (equal?/expval . vals)
+  (bool-val (apply = (map expval->num vals))))
+
+(define (greater?/expval . vals)
+  (bool-val (apply > (map expval->num vals))))
+
+(define (less?/expval . vals)
+  (bool-val (apply < (map expval->num vals))))
+
+(define (pair/expval val1 val2)
+  (mutpair-val (newpair val1 val2)))
+
+(define (left/expval val)
+  (mutpair-left (expval->mutpair val)))
+
+(define (right/expval val)
+  (mutpair-right (expval->mutpair val)))
+
+(define (setleft/expval val1 val2)
+  (mutpair-setleft (expval->mutpair val1) val2)
   '**void**)
 
-(define (setright-wrapper expv1 expv2)
-  (mutpair-setright (expval->mutpair expv1) expv2)
+(define (setright/expval val1 val2)
+  (mutpair-setright (expval->mutpair val1) val2)
   '**void**)
 
-(define (setref-wrapper expv1 expv2)
-  (setref! (expval->ref expv1) expv2)
+(define (deref/expval val)
+  (deref (expval->ref val)))
+
+(define (setref/expval val1 val2)
+  (setref! (expval->ref val1) val2)
   '**void**)
+
+(define (call/cc/expval cont val)
+  (let ((p (expval->proc val)))
+    'done))
 
 ; read-eval-print ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define read-eval-print
