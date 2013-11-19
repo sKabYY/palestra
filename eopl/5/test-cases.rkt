@@ -199,5 +199,13 @@ in let f = proc (return, x)
             if zero?(x) then minus(999) else (return x)
    in (my-call/cc proc (return) (f return 111))" 111
 
+"let f = proc (return, x)
+         if zero?(x) then minus(999) else (return x)
+in call/cc(proc (return) (f return 0))" -999
+
+"let f = proc (return, x)
+         if zero?(x) then minus(999) else (return x)
+in call/cc(proc (return) (f return 111))" 111
+
 ))
 (define exception-cases (append imprefs-cases exception-cases1))

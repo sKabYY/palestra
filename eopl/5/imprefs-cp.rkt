@@ -204,23 +204,32 @@
   (procedure
     (list-of-var (list-of symbol?))
     (body expression?)
-    (env environment?)))
+    (env environment?))
+  (cc-proc
+    (saved-cont continuation?)))
 
 (define (proc-val-procedure args body env)
   (proc-val (procedure args body env)))
 
+(define (proc-val-cc-proc cont)
+  (proc-val (cc-proc cont)))
+
 (define (apply-proc/k proc list-of-val cont)
-  (cases proc0 proc
-    (procedure (list-of-var body env)
-      (let ((nvars (length list-of-var))
-            (nvals (length list-of-val)))
-        (if (= nvars nvals)
-          (value-of/k
-            body
-            (extend-env env list-of-var list-of-val)
-            cont)
-          (report-arguments-not-match
-            list-of-var list-of-val))))))
+  (let ((nvals (length list-of-val)))
+    (cases proc0 proc
+      (procedure (list-of-var body env)
+        (let ((nvars (length list-of-var)))
+          (if (= nvars nvals)
+            (value-of/k
+              body
+              (extend-env env list-of-var list-of-val)
+              cont)
+            (report-arguments-not-match
+              list-of-var list-of-val))))
+      (cc-proc (saved-cont)
+        (if (= 1 nvals)
+          (apply-cont cont (car list-of-val))
+          (report-arguments-not-match '(v) list-of-val))))))
 
 (define (report-arguments-not-match vars vals)
   (eopl:error "args not match" vars vals))
@@ -652,8 +661,8 @@
   '**void**)
 
 (define (call/cc/expval cont val)
-  (let ((p (expval->proc val)))
-    'done))
+  (let ((proc (expval->proc val)))
+    (apply-proc/k proc (list (proc-val-cc-proc cont)) cont)))
 
 ; read-eval-print ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define read-eval-print
