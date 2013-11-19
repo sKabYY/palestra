@@ -42,7 +42,7 @@
     (identifier
       ((or letter)
        (arbno
-         (or "-" "_" letter digit))) symbol)))
+         (or "-" "_" "/" letter digit))) symbol)))
 
 (define grammar-spec
   '((program (expression) a-program)

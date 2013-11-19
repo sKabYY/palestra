@@ -185,5 +185,19 @@ in (index 5 pair(1, pair(2, pair(0, 0))))" -1
                 catch (e, c) minus(1)
 in (index 2 pair(1, pair(2, pair(0, 0))))" 1
 
+"let my-call/cc = proc (p)
+               letcc cont
+               in (p proc (v) cc cont v)
+in let f = proc (return, x)
+            if zero?(x) then minus(999) else (return x)
+   in (my-call/cc proc (return) (f return 0))" -999
+
+"let my-call/cc = proc (p)
+               letcc cont
+               in (p proc (v) cc cont v)
+in let f = proc (return, x)
+            if zero?(x) then minus(999) else (return x)
+   in (my-call/cc proc (return) (f return 111))" 111
+
 ))
 (define exception-cases (append imprefs-cases exception-cases1))
