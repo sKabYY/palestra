@@ -1,7 +1,6 @@
 #lang eopl
 
 (#%provide interp
-           interp/translation
            expval->value
            other-summary)
 
@@ -27,8 +26,10 @@
 ;            ::= cc Expression Expression
 ;            ::= letcc Identifier in Expression
 ;
+; ThreadId = Ref(Thread)
 ; MutPair = Ref(ExpVal) X Ref(ExpVal)
-; ExpVal = Number + Boolean + Proc + MutPair + Continuation + Ref(ExpVal)
+; ExpVal = Void + Number + Boolean + Proc + MutPair + Continuation
+;        + ThreadId + Ref(ExpVal)
 ; DenVal = Ref(ExpVal)
 ;
 ; primitive-procedures: minus, diff(-), addition(+), ,multiplication(*),
@@ -37,9 +38,10 @@
 ;                       newpair, left, right, setleft, setright,
 ;                       deref, setref,
 ;                       call/cc,
+;                       spawn,
 ;
 ; environment: symbol -> DenVal
-; store: Ref -> ExpVal
+; store: Ref -> ExpVal + Thread
 
 (define scanner-spec
   '((white-sp (whitespace) skip)
@@ -117,7 +119,8 @@
     (primitive ("setright") setright-prim)
     (primitive ("deref") deref-prim)
     (primitive ("setref") setref-prim)
-    (primitive ("call/cc") call/cc-prim)))
+    (primitive ("call/cc") call/cc-prim)
+    (primitive ("spawn") spawn-prim)))
 
 (sllgen:make-define-datatypes
   scanner-spec grammar-spec)
@@ -158,6 +161,11 @@
 (define the-final-answer 'uninitialized)
 (define the-max-time-slice 'uninitialized)
 (define the-time-remaining 'uninitialized)
+(define the-current-threadid 'uninitialized)
+
+(define (current-threadid) the-current-threadid)
+(define (set-current-threadid! thid)
+  (set! the-current-threadid thid))
 
 (define (initialize-scheduler! ticks)
   (set! the-ready-queue (empty-queue))
@@ -165,17 +173,18 @@
   (set! the-max-time-slice ticks)
   (set! the-time-remaining the-max-time-slice))
 
-(define (place-on-ready-queue! th)
-  (set! the-ready-queue (enqueue the-ready-queue th)))
+(define (place-on-ready-queue! thid)
+  (set! the-ready-queue (enqueue the-ready-queue thid)))
 
 (define (run-next-thread)
   (if (empty-queue? the-ready-queue)
     the-final-answer
     (dequeue the-ready-queue
-             (lambda (first-ready-thread other-ready-threads)
-               (set! the-ready-queue other-ready-threads)
+             (lambda (first-ready-threadid other-ready-threadids)
+               (set! the-ready-queue other-ready-threadids)
                (set! the-time-remaining the-max-time-slice)
-               (apply-thread first-ready-thread)))))
+               (set! the-current-threadid first-ready-threadid)
+               (apply-thread first-ready-threadid)))))
 
 (define (set-final-answer! val)
   (set! the-final-answer val))
@@ -186,8 +195,20 @@
 (define (decrement-timer!)
   (set! the-time-remaining (- the-time-remaining 1)))
 
+; thread ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define-datatype thread thread?
+  (a-thread
+    (val expval?)
+    (cont continuation?)))
+
+(define (apply-thread thid)
+  (cases thread (deref thid)
+    (a-thread (val cont)
+      (apply-cont cont val))))
+
 ; expval ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype expval expval?
+  (void-val)
   (num-val
     (num number?))
   (bool-val
@@ -199,17 +220,21 @@
   (ref-val
     (ref reference?))
   (cont-val
-    (cont continuation?)))
+    (cont continuation?))
+  (threadid-val
+    (thid reference?)))
 
 (define (expval->value val)
   (cond ((expval? val)
          (cases expval val
+           (void-val () '**void**)
            (num-val (num) num)
            (bool-val (bool) bool)
            (proc-val (proc) proc)
            (mutpair-val (pair) pair)
            (ref-val (ref) ref)
-           (cont-val (cont) cont)))
+           (cont-val (cont) cont)
+           (else val)))
         ((number? val) '==number==)
         ((boolean? val) '==bool==)
         (else val)))
@@ -251,6 +276,11 @@
   (cases expval val
     (cont-val (cont) cont)
     (else (report-expval-extractor-error 'cont val))))
+
+(define (expval->threadid val)
+  (cases expval val
+    (threadid-val (ref) ref)
+    (else (report-expval-extractor-error 'threadid val))))
 
 ; procedure ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype proc0 proc?
@@ -421,6 +451,8 @@
 (define-datatype continuation continuation?
   (end-main-thread-cont)
   (end-subthread-cont)
+  (start-thread-cont
+    (rator expval?))
   (a-cont
     (saved-cont continuation?)
     (env environment?)
@@ -468,12 +500,24 @@
 
 ; apply-cont: continuation X expval -> expval
 (define (apply-cont cont val)
+  (decrement-timer!)
+  (if (time-expired?)
+    (begin
+      (setref! (current-threadid) (a-thread val cont))
+      (place-on-ready-queue! (current-threadid))
+      (run-next-thread))
+    (apply-cont1 cont val)))
+
+(define (apply-cont1 cont val)
   (cases continuation cont
     (end-main-thread-cont ()
       (set-final-answer! val)
       (run-next-thread))
     (end-subthread-cont ()
       (run-next-thread))
+    (start-thread-cont (rator)
+      (let ((proc (expval->proc rator)))
+        (apply-proc/k proc (list val) (end-subthread-cont))))
     (a-cont (saved-cont env cfrm)
       (cases cont-frame cfrm
         (prim-cf (prim rands)
@@ -522,7 +566,7 @@
                                   (let-cf1 vars new-vals (cdr exps) body))))))
         (assign-cf (var)
           (setref! (apply-env env var) val)
-          (apply-cont saved-cont '**void**))
+          (apply-cont saved-cont (void-val)))
         (begin-cf (exps)
           (if (null? exps)
             (apply-cont saved-cont val)
@@ -541,7 +585,6 @@
 (define (apply-handler val before-raised-cont)
   (define (iter cont)
     (cases continuation cont
-      (end-cont () (report-uncaught-exception val before-raised-cont))
       (a-cont (saved-cont env cfrm)
         (cases cont-frame cfrm
           (try-cf (var cont-var handler-exp)
@@ -550,7 +593,8 @@
                                     (list var cont-var)
                                     (list val (cont-val before-raised-cont)))
                         saved-cont))
-          (else (iter saved-cont))))))
+          (else (iter saved-cont))))
+      (else (report-uncaught-exception val before-raised-cont))))
   (iter before-raised-cont))
 
 (define (report-uncaught-exception val cont)
@@ -562,7 +606,9 @@
   (initialize-store!)
   (cases program pgm
     (a-program (exp1)
-      (value-of/k exp1 (init-env) (end-main-thread-cont)))))
+      (let ((main-threadid (newref 'uninitialized)))
+        (set-current-threadid! main-threadid)
+        (value-of/k exp1 (init-env) (end-main-thread-cont))))))
 
 (define (value-of/k exp env cont)
   (cases expression exp
@@ -614,11 +660,9 @@
       (value-of/k exp env (a-cont cont env
                                   (raise-cf))))
     (cc-exp (exp1 exp2)
-      (set! times-of-using-cc (+ 1 times-of-using-cc))
       (value-of/k exp1 env (a-cont cont env
                                    (cc-cf exp2))))
     (letcc-exp (var exp)
-      (set! times-of-using-letcc (+ 1 times-of-using-letcc))
       (value-of/k exp (extend-env-1 env var (cont-val cont)) cont))))
 
 (define (report-no-exps-in-begin)
@@ -648,7 +692,8 @@
     (deref-prim () (>> deref/expval))
     (setref-prim () (>> setref/expval))
     (call/cc-prim ()
-      (apply call/cc/expval cont list-of-expval))))
+      (apply call/cc/expval cont list-of-expval))
+    (spawn-prim () (>> spawn/expval))))
 
 ; primitive procedures ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -693,22 +738,29 @@
 
 (define (setleft/expval val1 val2)
   (mutpair-setleft (expval->mutpair val1) val2)
-  '**void**)
+  (void-val))
 
 (define (setright/expval val1 val2)
   (mutpair-setright (expval->mutpair val1) val2)
-  '**void**)
+  (void-val))
 
 (define (deref/expval val)
   (deref (expval->ref val)))
 
 (define (setref/expval val1 val2)
   (setref! (expval->ref val1) val2)
-  '**void**)
+  (void-val))
 
 (define (call/cc/expval cont val)
   (let ((proc (expval->proc val)))
     (apply-proc/k proc (list (cont-val cont)) cont)))
+
+(define (spawn/expval val)
+  (place-on-ready-queue!
+    (let* ((thid (newref 'uninitialized))
+           (th (a-thread thid (start-thread-cont val))))
+      (setref! thid th)
+      thid)))
 
 ; read-eval-print ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define read-eval-print
