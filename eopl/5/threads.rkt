@@ -38,10 +38,12 @@
 ;                       newpair, left, right, setleft, setright,
 ;                       deref, setref,
 ;                       call/cc,
-;                       spawn,
+;                       print, spawn, mutex, wait, signal,
 ;
 ; environment: symbol -> DenVal
 ; store: Ref -> ExpVal + Thread
+;
+; Mutex: Ref(Boolean) X Ref(Queue of ThreadId)
 
 (define scanner-spec
   '((white-sp (whitespace) skip)
@@ -120,7 +122,11 @@
     (primitive ("deref") deref-prim)
     (primitive ("setref") setref-prim)
     (primitive ("call/cc") call/cc-prim)
-    (primitive ("spawn") spawn-prim)))
+    (primitive ("print") print-prim)
+    (primitive ("spawn") spawn-prim)
+    (primitive ("mutex") mutex-prim)
+    (primitive ("wait") wait-prim)
+    (primitive ("signal") signal-prim)))
 
 (sllgen:make-define-datatypes
   scanner-spec grammar-spec)
@@ -167,6 +173,9 @@
 (define (set-current-threadid! thid)
   (set! the-current-threadid thid))
 
+(define (save-current-thread! val cont)
+  (setref! the-current-threadid (a-thread val cont)))
+
 (define (initialize-scheduler! ticks)
   (set! the-ready-queue (empty-queue))
   (set! the-final-answer 'uninitialized)
@@ -187,7 +196,12 @@
                (apply-thread first-ready-threadid)))))
 
 (define (set-final-answer! val)
-  (set! the-final-answer val))
+  (if (eqv? the-final-answer 'uninitialized)
+    (set! the-final-answer val)
+    (report-main-thread-end-twice)))
+
+(define (report-main-thread-end-twice)
+  (eopl:error "Main thread end twice!"))
 
 (define (time-expired?)
   (zero? the-time-remaining))
@@ -222,7 +236,9 @@
   (cont-val
     (cont continuation?))
   (threadid-val
-    (thid reference?)))
+    (thid reference?))
+  (mutex-val
+    (mut mutex?)))
 
 (define (expval->value val)
   (cond ((expval? val)
@@ -281,6 +297,11 @@
   (cases expval val
     (threadid-val (ref) ref)
     (else (report-expval-extractor-error 'threadid val))))
+
+(define (expval->mutex val)
+  (cases expval val
+    (mutex-val (mut) mut)
+    (else (report-expval-extractor-error 'mutex val))))
 
 ; procedure ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype proc0 proc?
@@ -348,6 +369,44 @@
   (cases mutpair pair
     (a-pair (l r)
       (setref! r val))))
+
+; Mutex ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(define-datatype mutex mutex?
+  (a-mutex
+    (ref-to-closed? reference?)
+    (ref-to-wait-queue reference?)))
+
+(define (new-mutex)
+  (a-mutex
+    (newref #f)
+    (newref (empty-queue))))
+
+(define (wait mut cont)
+  (cases mutex mut
+    (a-mutex (ref-to-closed? ref-to-wait-queue)
+      (if (deref ref-to-closed?)
+        (begin
+          (save-current-thread! (void-val) cont)
+          (setref! ref-to-wait-queue
+                   (enqueue (deref ref-to-wait-queue)
+                            (current-threadid)))
+          (run-next-thread))
+        (begin
+          (setref! ref-to-closed? #t)
+          (apply-cont cont (void-val)))))))
+
+(define (signal mut cont)
+  (cases mutex mut
+    (a-mutex (ref-to-closed? ref-to-wait-queue)
+      (if (empty-queue? (deref ref-to-wait-queue))
+        (begin
+          (setref! ref-to-closed? #t)
+          (apply-cont cont (void-val)))
+        (dequeue (deref ref-to-wait-queue)
+                 (lambda (first-wait-threadid other-wait-threadids)
+                   (setref! ref-to-wait-queue other-wait-threadids)
+                   (place-on-ready-queue! first-wait-threadid)
+                   (apply-cont cont (void-val))))))))
 
 ; store ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define the-store 'uninitialized)
@@ -500,10 +559,15 @@
 
 ; apply-cont: continuation X expval -> expval
 (define (apply-cont cont val)
+  (if (expval? val)
+    'hehe
+    (begin
+      (eopl:pretty-print val)
+      (eopl:pretty-print cont)))
   (decrement-timer!)
   (if (time-expired?)
     (begin
-      (setref! (current-threadid) (a-thread val cont))
+      (save-current-thread! val cont)
       (place-on-ready-queue! (current-threadid))
       (run-next-thread))
     (apply-cont1 cont val)))
@@ -512,8 +576,10 @@
   (cases continuation cont
     (end-main-thread-cont ()
       (set-final-answer! val)
+      (eopl:printf "End main thread.~%")
       (run-next-thread))
     (end-subthread-cont ()
+      (eopl:printf "End subthread.~%")
       (run-next-thread))
     (start-thread-cont (rator)
       (let ((proc (expval->proc rator)))
@@ -673,6 +739,8 @@
 (define (apply-primitive/k prim list-of-expval cont)
   (define (>> prim/expval)
     (apply-cont cont (apply prim/expval list-of-expval)))
+  (define (>>/k prim/expval)
+    (apply prim/expval cont list-of-expval))
   (cases primitive prim
     (add-prim () (>> add/expval))
     (diff-prim () (>> diff/expval))
@@ -691,9 +759,12 @@
     (setright-prim () (>> setright/expval))
     (deref-prim () (>> deref/expval))
     (setref-prim () (>> setref/expval))
-    (call/cc-prim ()
-      (apply call/cc/expval cont list-of-expval))
-    (spawn-prim () (>> spawn/expval))))
+    (call/cc-prim () (>>/k call/cc/expval))
+    (print-prim () (>> print/expval))
+    (spawn-prim () (>> spawn/expval))
+    (mutex-prim () (>> mutex/expval))
+    (wait-prim () (>>/k wait/expval))
+    (signal-prim () (>>/k signal/expval))))
 
 ; primitive procedures ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -755,12 +826,26 @@
   (let ((proc (expval->proc val)))
     (apply-proc/k proc (list (cont-val cont)) cont)))
 
+(define (print/expval val)
+  (eopl:printf ">> ")
+  (eopl:pretty-print (expval->value val))
+  (void-val))
+
 (define (spawn/expval val)
-  (place-on-ready-queue!
-    (let* ((thid (newref 'uninitialized))
-           (th (a-thread thid (start-thread-cont val))))
-      (setref! thid th)
-      thid)))
+  (let* ((thid (newref 'uninitialized))
+         (th (a-thread (ref-val thid) (start-thread-cont val))))
+    (setref! thid th)
+    (place-on-ready-queue! thid)
+    (threadid-val thid)))
+
+(define (mutex/expval)
+  (mutex-val (new-mutex)))
+
+(define (wait/expval cont val)
+  (wait (expval->mutex val) cont))
+
+(define (signal/expval cont val)
+  (signal (expval->mutex val) cont))
 
 ; read-eval-print ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define read-eval-print

@@ -7,5 +7,5 @@
 (interp-disp
   (lambda (src) (interp 5 src))
   expval->value
-  imprefs-cp-cases
+  threads-cases
   other-summary)

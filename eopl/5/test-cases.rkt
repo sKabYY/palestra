@@ -214,3 +214,37 @@ in call/cc(proc (return) (f return 111))" 111
 ))
 
 (define imprefs-cp-cases (append imprefs-cases exception-cases1))
+
+(define threads-cases1
+  (list
+
+"print(1)" '**void**
+
+"letrec p (x, n) =
+        if less?(n, 0)
+        then 0
+        else begin print(x), (p +(x, 1) -(n, 1)) end
+in begin
+    spawn(proc (d) (p 10 10)),
+    spawn(proc (d) (p 100 10)),
+    999
+   end" 999
+
+"let mut = mutex()
+in begin wait(mut), signal(mut), 42 end" 42
+
+"let mut = mutex()
+in let p = proc (x, n)
+            letrec iter (x, n) =
+                    if less?(n, 0)
+                    then 0
+                    else begin print(x), (iter +(x, 1) -(n, 1)) end
+            in begin wait(mut), (iter x n), signal(mut) end
+   in begin
+       spawn(proc (d) (p 10 10)),
+       spawn(proc (d) (p 100 10)),
+       999
+      end" 999
+
+))
+(define threads-cases (append imprefs-cp-cases threads-cases1))
