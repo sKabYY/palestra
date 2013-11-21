@@ -246,5 +246,42 @@ in let p = proc (x, n)
        999
       end" 999
 
+"receive()" 'uninitialized
+
+"let tid = spawn(proc (d) print(receive()))
+in send(tid, 989)" '**void**
+
+"let mt = get-tid()
+in let p = proc (d)
+            begin
+             send(mt, 111), send(mt, 222), print(receive())
+            end
+   in let t1 = spawn(p),
+          t2 = spawn(p)
+      in begin
+          send(t1, 1110),
+          send(t2, 2220),
+          print(receive()),
+          print(receive()),
+          print(receive()),
+          receive()
+         end" 222
+
+"let mt = get-tid()
+in let p = proc (d)
+            begin
+             send(mt, 111), send(mt, 222), print(receive())
+            end
+   in let t1 = spawn(p),
+          t2 = spawn(p)
+      in begin
+          print(receive()),
+          print(receive()),
+          print(receive()),
+          send(t1, 1110),
+          send(t2, 2220),
+          receive()
+         end" 222
+
 ))
 (define threads-cases (append imprefs-cp-cases threads-cases1))

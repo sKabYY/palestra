@@ -26,6 +26,7 @@
 ;            ::= cc Expression Expression
 ;            ::= letcc Identifier in Expression
 ;
+; Thread = ThreadId X Ref(Queue) X Ref(Expval) X Ref(Continuation)
 ; ThreadId = Ref(Thread)
 ; MutPair = Ref(ExpVal) X Ref(ExpVal)
 ; ExpVal = Void + Number + Boolean + Proc + MutPair + Continuation
@@ -38,10 +39,11 @@
 ;                       newpair, left, right, setleft, setright,
 ;                       deref, setref,
 ;                       call/cc,
-;                       print, spawn, mutex, wait, signal,
+;                       print,
+;                       spawn, mutex, wait, signal, receive, send, get-tid,
 ;
 ; environment: symbol -> DenVal
-; store: Ref -> ExpVal + Thread
+; store: Ref -> ExpVal + Thread + (Boolean + Queue + Continuation)
 ;
 ; Mutex: Ref(Boolean) X Ref(Queue of ThreadId)
 
@@ -124,9 +126,12 @@
     (primitive ("call/cc") call/cc-prim)
     (primitive ("print") print-prim)
     (primitive ("spawn") spawn-prim)
+    (primitive ("get-tid") get-tid-prim)
     (primitive ("mutex") mutex-prim)
     (primitive ("wait") wait-prim)
-    (primitive ("signal") signal-prim)))
+    (primitive ("signal") signal-prim)
+    (primitive ("receive") receive-prim)
+    (primitive ("send") send-prim)))
 
 (sllgen:make-define-datatypes
   scanner-spec grammar-spec)
@@ -170,11 +175,11 @@
 (define the-current-threadid 'uninitialized)
 
 (define (current-threadid) the-current-threadid)
-(define (set-current-threadid! thid)
-  (set! the-current-threadid thid))
+(define (set-current-threadid! tid)
+  (set! the-current-threadid tid))
 
 (define (save-current-thread! val cont)
-  (setref! the-current-threadid (a-thread val cont)))
+  (save-thread! the-current-threadid val cont))
 
 (define (initialize-scheduler! ticks)
   (set! the-ready-queue (empty-queue))
@@ -182,8 +187,8 @@
   (set! the-max-time-slice ticks)
   (set! the-time-remaining the-max-time-slice))
 
-(define (place-on-ready-queue! thid)
-  (set! the-ready-queue (enqueue the-ready-queue thid)))
+(define (place-on-ready-queue! tid)
+  (set! the-ready-queue (enqueue the-ready-queue tid)))
 
 (define (run-next-thread)
   (if (empty-queue? the-ready-queue)
@@ -194,6 +199,10 @@
                (set! the-time-remaining the-max-time-slice)
                (set! the-current-threadid first-ready-threadid)
                (apply-thread first-ready-threadid)))))
+
+(define (save-and-run-next-thread val cont)
+  (save-current-thread! val cont)
+  (run-next-thread))
 
 (define (set-final-answer! val)
   (if (eqv? the-final-answer 'uninitialized)
@@ -209,16 +218,66 @@
 (define (decrement-timer!)
   (set! the-time-remaining (- the-time-remaining 1)))
 
+(define (receive cont)
+  (let ((dummy (void-val))
+        (rcont (receive-cont cont)))
+    (if (empty-message-queue? (current-threadid))
+      (save-and-run-next-thread (void-val) (receive-cont cont))
+      (apply-cont cont (fetch-message!)))))
+      ;  WRONG: (apply-cont (receive-cont cont) (void-val))
+      ;         Use receive-cont only when the thread blocks.
+
+(define (fetch-message!)
+  (fetch-thread-message! (current-threadid)))
+
 ; thread ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype thread thread?
   (a-thread
-    (val expval?)
-    (cont continuation?)))
+    (threadid reference?)
+    (ref-to-message-queue reference?)
+    (ref-to-val reference?)
+    (ref-to-cont reference?)))
 
-(define (apply-thread thid)
-  (cases thread (deref thid)
-    (a-thread (val cont)
-      (apply-cont cont val))))
+(define (new-thread thread-proc-val)
+  (let* ((tid (newref 'uninitialized))
+         (th (a-thread tid
+                       (newref (empty-queue))
+                       (newref (threadid-val tid))
+                       (newref (start-thread-cont thread-proc-val)))))
+    (setref! tid th)
+    tid))
+
+(define (save-thread! tid val cont)
+  (cases thread (deref tid)
+    (a-thread (tid1 ref-to-mq ref-to-val ref-to-cont)
+      (setref! ref-to-val val)
+      (setref! ref-to-cont cont))))
+
+(define (apply-thread tid)
+  (cases thread (deref tid)
+    (a-thread (threadid ref-to-mq ref-to-val ref-to-cont)
+      (apply-cont (deref ref-to-cont) (deref ref-to-val)))))
+
+(define (empty-message-queue? tid)
+  (cases thread (deref tid)
+    (a-thread (threadid ref-to-mq ref-to-val ref-to-cont)
+      (empty-queue? (deref ref-to-mq)))))
+
+(define (fetch-thread-message! tid)
+  (cases thread (deref tid)
+    (a-thread (threadid ref-to-mq ref-to-val ref-to-cont)
+      (dequeue (deref ref-to-mq)
+               (lambda (first-message other-messages)
+                 (setref! ref-to-mq other-messages)
+                 first-message)))))
+
+(define (send tid message)
+  (cases thread (deref tid)
+    (a-thread (threadid ref-to-mq ref-to-val ref-to-cont)
+      (setref! ref-to-mq (enqueue (deref ref-to-mq) message))
+      (if (receive-cont? (deref ref-to-cont))
+        (place-on-ready-queue! tid)
+        'do-nothing))))
 
 ; expval ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype expval expval?
@@ -236,7 +295,7 @@
   (cont-val
     (cont continuation?))
   (threadid-val
-    (thid reference?))
+    (tid reference?))
   (mutex-val
     (mut mutex?)))
 
@@ -386,11 +445,10 @@
     (a-mutex (ref-to-closed? ref-to-wait-queue)
       (if (deref ref-to-closed?)
         (begin
-          (save-current-thread! (void-val) cont)
           (setref! ref-to-wait-queue
                    (enqueue (deref ref-to-wait-queue)
                             (current-threadid)))
-          (run-next-thread))
+          (save-and-run-next-thread (void-val) cont))
         (begin
           (setref! ref-to-closed? #t)
           (apply-cont cont (void-val)))))))
@@ -512,10 +570,17 @@
   (end-subthread-cont)
   (start-thread-cont
     (rator expval?))
+  (receive-cont
+    (saved-cont continuation?))
   (a-cont
     (saved-cont continuation?)
     (env environment?)
     (cfrm cont-frame?)))
+
+(define (receive-cont? cont)
+  (cases continuation cont
+    (receive-cont (saved-cont) #t)
+    (else #f)))
 
 (define-datatype cont-frame cont-frame?
   (prim-cf
@@ -560,17 +625,17 @@
 ; apply-cont: continuation X expval -> expval
 (define (apply-cont cont val)
   (if (expval? val)
-    'hehe
+    'do-nothing:debug-not-expval
     (begin
       (eopl:pretty-print val)
       (eopl:pretty-print cont)))
-  (decrement-timer!)
   (if (time-expired?)
     (begin
-      (save-current-thread! val cont)
       (place-on-ready-queue! (current-threadid))
-      (run-next-thread))
-    (apply-cont1 cont val)))
+      (save-and-run-next-thread val cont))
+    (begin
+      (decrement-timer!)
+      (apply-cont1 cont val))))
 
 (define (apply-cont1 cont val)
   (cases continuation cont
@@ -584,6 +649,8 @@
     (start-thread-cont (rator)
       (let ((proc (expval->proc rator)))
         (apply-proc/k proc (list val) (end-subthread-cont))))
+    (receive-cont (saved-cont)
+      (apply-cont saved-cont (fetch-message!)))
     (a-cont (saved-cont env cfrm)
       (cases cont-frame cfrm
         (prim-cf (prim rands)
@@ -672,7 +739,7 @@
   (initialize-store!)
   (cases program pgm
     (a-program (exp1)
-      (let ((main-threadid (newref 'uninitialized)))
+      (let ((main-threadid (new-thread (void-val))))
         (set-current-threadid! main-threadid)
         (value-of/k exp1 (init-env) (end-main-thread-cont))))))
 
@@ -762,9 +829,12 @@
     (call/cc-prim () (>>/k call/cc/expval))
     (print-prim () (>> print/expval))
     (spawn-prim () (>> spawn/expval))
+    (get-tid-prim () (>> get-tid/expval))
     (mutex-prim () (>> mutex/expval))
     (wait-prim () (>>/k wait/expval))
-    (signal-prim () (>>/k signal/expval))))
+    (signal-prim () (>>/k signal/expval))
+    (receive-prim () (>>/k receive/expval))
+    (send-prim () (>> send/expval))))
 
 ; primitive procedures ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -832,11 +902,12 @@
   (void-val))
 
 (define (spawn/expval val)
-  (let* ((thid (newref 'uninitialized))
-         (th (a-thread (ref-val thid) (start-thread-cont val))))
-    (setref! thid th)
-    (place-on-ready-queue! thid)
-    (threadid-val thid)))
+  (let ((tid (new-thread val)))
+    (place-on-ready-queue! tid)
+    (threadid-val tid)))
+
+(define (get-tid/expval)
+  (threadid-val (current-threadid)))
 
 (define (mutex/expval)
   (mutex-val (new-mutex)))
@@ -846,6 +917,13 @@
 
 (define (signal/expval cont val)
   (signal (expval->mutex val) cont))
+
+(define (receive/expval cont)
+  (receive cont))
+
+(define (send/expval val message)
+  (send (expval->threadid val) message)
+  (void-val))
 
 ; read-eval-print ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define read-eval-print
