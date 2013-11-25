@@ -19,7 +19,7 @@ mk_input_format_from_list(L) ->
 
 mrgo(N, InputFormat, Map) ->
     InputFormatProc = spawn(fun () -> input_format_proc(InputFormat) end),
-    MapEmitProc = spawn(fun () -> map_emit_proc([]) end),
+    MapEmitProc = spawn(fun () -> map_emit_proc() end),
     MapEmit = fun (KV) -> MapEmitProc ! {emit, KV} end,
     MapProcs = start_map_procs(N, self(), InputFormatProc, Map, MapEmit),
     wait(MapProcs),
@@ -37,17 +37,20 @@ pull_and_stop(Pid) ->
     receive
         Data ->
             Pid ! stop,
-            io:format("~w~n", [Data]),
+            io:format("~w~n", [dict:to_list(Data)]),
             Data
     end.
 
-map_emit_proc(KVList) ->
+map_emit_proc() ->
+    map_emit_proc_iter(dict:new()).
+
+map_emit_proc_iter(Bucket) ->
     receive
-        {emit, KV} ->
-            map_emit_proc([KV|KVList]);
+        {emit, {K, V}} ->
+            map_emit_proc_iter(dict:append(K, V, Bucket));
         {pull, From} ->
-            From ! KVList,
-            map_emit_proc(KVList);
+            From ! Bucket,
+            map_emit_proc_iter(Bucket);
         stop -> done
     end.
 
