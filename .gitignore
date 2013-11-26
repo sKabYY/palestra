@@ -18,3 +18,5 @@
 # erlang
 *.beam
 *.dump
+*.erlprof
+*.trace
