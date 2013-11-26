@@ -46,8 +46,8 @@ wc_reduce({_, Vals}) -> lists:sum(Vals).
 wc(N) ->
     InputFormat = mk_line_input_format("mrlib.erl"),
     OutputFormat = fun mrlib:default_output_format/1,
-    Map = fun cw_map/2,
-    Reduce = fun cw_reduce/1,
+    Map = fun wc_map/2,
+    Reduce = fun wc_reduce/1,
     mrlib:mapreduce(
       N,
       InputFormat,
