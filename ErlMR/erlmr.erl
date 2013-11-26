@@ -1,56 +1,77 @@
 -module(erlmr).
--export([mrgo/3,
-         mk_input_format_from_list/1]).
+-export([mrgo/5,
+         mk_input_format_from_list/1,
+         pprint/1]).
+
+pprint(Datum) -> io:format("~p~n", [Datum]).
 
 % map: {k1, v1} -> [{k2, v2}]
-% reduce: {k2, [v2]} -> [{k3, v3}]
+% reduce: {k2, [v2]} -> {k2, v3}
 
 mk_input_format_from_list(L) ->
     fun () ->
         case L of
-            [] -> nil;
+            [] -> eof;
             [H|T] -> {H, mk_input_format_from_list(T)}
         end
     end.
 
 % N: the max number of tasks
-% Map: {K, V} X Emit -> void
-% Emit: {K, V} -> void
+% Map: {K, V} X EmitIntermediate -> void
+% EmitIntermediate: {K, V} -> void
+% Reduce: {K, [V]} -> V
+% InputFormat () -> {{K, V}, NextInputFormat} | eof
+% OutputFormat {K, V} -> NextOutputFormat
 
-mrgo(N, InputFormat, Map) ->
+mrgo(N, InputFormat, OutputFormat, Map, Reduce) ->
     InputFormatProc = spawn(fun () -> input_format_proc(InputFormat) end),
-    MapEmitProc = spawn(fun () -> map_emit_proc() end),
-    MapEmit = fun (KV) -> MapEmitProc ! {emit, KV} end,
-    MapProcs = start_map_procs(N, self(), InputFormatProc, Map, MapEmit),
+    EmitIntermediateProc = spawn(fun () -> emit_intermediate_proc() end),
+    EmitIntermediate = fun (KV) -> EmitIntermediateProc ! {emit, KV} end,
+    MapProcs = start_map_procs(N, self(), InputFormatProc, Map, EmitIntermediate),
     wait(MapProcs),
-    InputFormatProc ! stop,
-    pull_and_stop(MapEmitProc).
+    stop(InputFormatProc),
+    IntermediateData = pull_and_stop(EmitIntermediateProc),
+    IntermediateInputProc =
+        spawn(fun () ->
+                      IntermediateInput = mk_input_format_from_list(IntermediateData),
+                      input_format_proc(IntermediateInput)
+              end),
+    OutputFormatProc = spawn(fun () -> output_format_proc(OutputFormat) end),
+    ReduceProcs = start_reduce_procs(N, self(), IntermediateInputProc, OutputFormatProc, Reduce),
+    wait(ReduceProcs),
+    stop(IntermediateInputProc),
+    stop(OutputFormatProc).
 
-wait([]) -> done;
+% two types of processes: worker and tracker
+% worker: map_proc and reduce_proc
+% tracker: ...
+
+wait([]) -> done;  % TODO
 wait(Pids) ->
     receive
         Pid -> wait([X || X <- Pids, X =/= Pid])
     end.
 
+stop(Pid) -> Pid ! stop, ok.
+
 pull_and_stop(Pid) ->
     Pid ! {pull, self()},
     receive
-        Data ->
+        Datum ->
             Pid ! stop,
-            io:format("~w~n", [dict:to_list(Data)]),
-            Data
+            Datum
     end.
 
-map_emit_proc() ->
-    map_emit_proc_iter(dict:new()).
+emit_intermediate_proc() ->
+    emit_intermediate_proc_iter(dict:new()).
 
-map_emit_proc_iter(Bucket) ->
+emit_intermediate_proc_iter(Bucket) ->
     receive
         {emit, {K, V}} ->
-            map_emit_proc_iter(dict:append(K, V, Bucket));
+            emit_intermediate_proc_iter(dict:append(K, V, Bucket));
         {pull, From} ->
-            From ! Bucket,
-            map_emit_proc_iter(Bucket);
+            From ! dict:to_list(Bucket),
+            emit_intermediate_proc_iter(Bucket);
         stop -> done
     end.
 
@@ -61,24 +82,47 @@ input_format_proc(InputFormat) ->
                 {KV, NextInputFormat} ->
                     From ! KV,
                     input_format_proc(NextInputFormat);
-                _ ->
-                    From ! stop,
+                eof ->
+                    From ! eof,
                     input_format_proc(InputFormat)
             end;
         stop -> done
     end.
 
-start_map_procs(0, _, _, _, _) -> [];
-start_map_procs(N, MainPid, InputFormatProc, Map, Emit) when N > 0 ->
-    Pid = spawn(fun () -> map_proc(MainPid, InputFormatProc, Map, Emit) end),
-    [Pid|start_map_procs(N - 1, MainPid, InputFormatProc, Map, Emit)].
+output_format_proc(OutputFormat) ->
+    receive
+        {output, KV} ->
+            output_format_proc(OutputFormat(KV));
+        stop -> done
+    end.
 
-map_proc(MainPid, InputFormatProc, Map, Emit) ->
+start_map_procs(0, _, _, _, _) -> [];
+start_map_procs(N, MainPid, InputFormatProc, Map, EmitIntermediate) when N > 0 ->
+    Pid = spawn(fun () -> map_proc(MainPid, InputFormatProc, Map, EmitIntermediate) end),
+    [Pid|start_map_procs(N - 1, MainPid, InputFormatProc, Map, EmitIntermediate)].
+
+map_proc(MainPid, InputFormatProc, Map, EmitIntermediate) ->
     InputFormatProc ! {self(), next},
     receive
         {K, V} ->
-            Map({K, V}, Emit),
-            map_proc(MainPid, InputFormatProc, Map, Emit);
-        stop ->
+            Map({K, V}, EmitIntermediate),
+            map_proc(MainPid, InputFormatProc, Map, EmitIntermediate);
+        eof ->
+            MainPid ! self()
+    end.
+
+start_reduce_procs(0, _, _, _, _) -> [];
+start_reduce_procs(N, MainPid, IntermediateInputProc, OutputFormatProc, Reduce) ->
+    Pid = spawn(fun () -> reduce_proc(MainPid, IntermediateInputProc, OutputFormatProc, Reduce) end),
+    [Pid|start_reduce_procs(N - 1, MainPid, IntermediateInputProc, OutputFormatProc, Reduce)].
+
+reduce_proc(MainPid, IntermediateInputProc, OutputFormatProc, Reduce) ->
+    IntermediateInputProc ! {self(), next},
+    receive
+        {K, ListOfV} ->
+            V = Reduce({K, ListOfV}),
+            OutputFormatProc ! {output, {K, V}},
+            reduce_proc(MainPid, IntermediateInputProc, OutputFormatProc, Reduce);
+        eof ->
             MainPid ! self()
     end.
