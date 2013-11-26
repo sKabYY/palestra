@@ -20,3 +20,4 @@
 *.dump
 *.erlprof
 *.trace
+*.erldat
