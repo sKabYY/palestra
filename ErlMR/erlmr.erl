@@ -41,6 +41,8 @@ default_output_format({K, V}) ->
 % EmitIntermediate: {K, V} -> void
 % Reduce: {K, [V]} -> V
 % InputFormat () -> {{K, V}, NextInputFormat} | eof
+%     InputFormat may have with side-effect.
+%     The return value of InputFormat after it has returned eof is unspecified.
 % OutputFormat {K, V} -> NextOutputFormat
 
 mapreduce(N, InputFormat, OutputFormat, Map, Reduce) ->
@@ -131,6 +133,15 @@ emit_intermediate_proc_iter(Bucket) ->
         stop -> ok
     end.
 
+% a proc always sends eof
+eof_proc() ->
+    receive
+        {From, next} ->
+            From ! eof,
+            eof_proc();
+        stop -> ok
+    end.
+
 % input format proc
 input_format_proc(InputFormat) ->
     receive
@@ -141,7 +152,7 @@ input_format_proc(InputFormat) ->
                     input_format_proc(NextInputFormat);
                 eof ->
                     From ! eof,
-                    input_format_proc(InputFormat)
+                    eof_proc()
             end;
         stop -> ok
     end.
