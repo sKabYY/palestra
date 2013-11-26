@@ -1,4 +1,4 @@
--module(erlmr).
+-module(mrlib).
 -export([mapreduce/5,
          mk_input_format_from_list/1,
          default_map/2,
