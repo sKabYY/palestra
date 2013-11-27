@@ -1,9 +1,7 @@
 -module(mrlib).
--export([mapreduce/5,
-         mk_input_format_from_list/1,
+-export([mapreduce/3,
          default_map/2,
          default_reduce/1,
-         default_output_format/1,
          pprint/1]).
 
 % map: {k1, v1} -> [{k2, v2}]
@@ -14,77 +12,45 @@
 % pretty print
 pprint(Datum) -> io:format("~p~n", [Datum]).
 
-% make input format from a list
-mk_input_format_from_list(L) ->
-    fun () ->
-        case L of
-            [] -> eof;
-            [H|T] -> {H, mk_input_format_from_list(T)}
-        end
-    end.
-
 % default map
 default_map({K, V}, Emit) -> Emit({K, V}).
 
 % default reduce
-default_reduce({_K, ListOfV}) -> ListOfV.
-
-% default output_format
-default_output_format({K, V}) ->
-    pprint({K, V}),
-    fun default_output_format/1.
+default_reduce({K, ListOfV}) -> {K, ListOfV}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % N: the max number of workers
-% Map: {K, V} X EmitIntermediate -> void
-% EmitIntermediate: {K, V} -> void
+% Tasks: [Task]
+% Task: {map, Map} or {reduce, Reduce}
+% Map: {K, V} X Emit-> void
+% Emit: {K, V} -> void
 % Reduce: {K, [V]} -> V
-% InputFormat () -> {{K, V}, NextInputFormat} | eof
-%     InputFormat may have with side-effect.
-%     The return value of InputFormat after it has returned eof is unspecified.
-% OutputFormat {K, V} -> NextOutputFormat
 
-mapreduce(N, InputFormat, OutputFormat, Map, Reduce) ->
+mapreduce(_, _, []) -> {error, "The tasks is empty."};
+mapreduce(N, InputList, Tasks) when is_list(Tasks) ->
     process_flag(trap_exit, true),
-    InputFormatProc = start_tracker(
-                        fun () ->
-                                input_format_proc(InputFormat)
-                        end),
-    EmitIntermediateProc = start_tracker(
-                             fun () ->
-                                     emit_intermediate_proc()
-                             end),
-    EmitIntermediate = fun (KV) -> EmitIntermediateProc ! {emit, KV} end,
-    MapProcs = start_workern(
-                 N,
-                 fun () ->
-                         map_proc(Map,
-                                  InputFormatProc,
-                                  EmitIntermediate)
-                 end),
-    wait_workers(MapProcs),
-    stop_tracker(InputFormatProc),
-    IntermediateData = pull_and_stop_tracker(EmitIntermediateProc),
-    IntermediateInput = mk_input_format_from_list(IntermediateData),
-    IntermediateInputProc = start_tracker(
-                              fun () ->
-                                      input_format_proc(IntermediateInput)
-                              end),
-    OutputFormatProc = start_tracker(
-                         fun () ->
-                                 output_format_proc(OutputFormat)
-                         end),
-    ReduceProcs = start_workern(
-                    N,
-                    fun() ->
-                            reduce_proc(Reduce,
-                                        IntermediateInputProc,
-                                        OutputFormatProc)
-                    end),
-    wait_workers(ReduceProcs),
-    stop_tracker(IntermediateInputProc),
-    stop_tracker(OutputFormatProc).
+    mapreduce_iter(N, InputList, Tasks).
+
+mapreduce_iter(N, InputList, [Task]) ->
+    start_task(N, InputList, Task, fun output_proc/0);
+mapreduce_iter(N, InputList, [Task|Tail]) ->
+    IntermediateList = start_task(N, InputList, Task, fun groupby_proc/0),
+    mapreduce_iter(N, IntermediateList, Tail).
+
+start_task(N, InputList, Task, IntermediateProcFunc) ->
+    InputPid = start_tracker(fun () -> input_proc(InputList) end),
+    IntermediatePid = start_tracker(IntermediateProcFunc),
+    Emit = fun (KV) -> IntermediatePid ! {emit, KV} end,
+    WorkerPids = case Task of
+                     {map, Map} ->
+                         start_workern(N, fun () -> map_proc(Map, InputPid, Emit) end);
+                     {reduce, Reduce} ->
+                         start_workern(N, fun () -> reduce_proc(Reduce, InputPid, Emit) end)
+                 end,
+    wait_workers(WorkerPids),
+    stop_tracker(InputPid),
+    pull_and_stop_tracker(IntermediatePid).
 
 % two types of processes: worker and tracker
 % worker: map_proc and reduce_proc, stop after receive 'eof'
@@ -119,69 +85,64 @@ wait_workers(Pids) ->
             wait_workers([X || X <- Pids, X =/= Pid])
     end.
 
-% emit proc
-emit_intermediate_proc() ->
-    emit_intermediate_proc_iter(dict:new()).
+% output proc
+output_proc() ->
+    output_proc_loop([]).
 
-emit_intermediate_proc_iter(Bucket) ->
+output_proc_loop(List) ->
     receive
-        {emit, {K, V}} ->
-            emit_intermediate_proc_iter(dict:append(K, V, Bucket));
+        {emit, KV} ->
+            output_proc_loop(List ++ [KV]);
         {pull, From} ->
-            From ! dict:to_list(Bucket),
-            emit_intermediate_proc_iter(Bucket);
+            From ! List,
+            output_proc_loop(List);
         stop -> ok
     end.
 
-% a proc always sends eof
-eof_proc() ->
+% groupby proc
+groupby_proc() ->
+    groupby_proc_loop(dict:new()).
+
+groupby_proc_loop(Bucket) ->
+    receive
+        {emit, {K, V}} ->
+            groupby_proc_loop(dict:append(K, V, Bucket));
+        {pull, From} ->
+            From ! dict:to_list(Bucket),
+            groupby_proc_loop(Bucket);
+        stop -> ok
+    end.
+
+% input proc
+input_proc([]) ->
     receive
         {From, next} ->
             From ! eof,
-            eof_proc();
+            input_proc([]);
         stop -> ok
-    end.
-
-% input format proc
-input_format_proc(InputFormat) ->
+    end;
+input_proc([H|T]) ->
     receive
         {From, next} ->
-            case InputFormat() of
-                {KV, NextInputFormat} ->
-                    From ! KV,
-                    input_format_proc(NextInputFormat);
-                eof ->
-                    From ! eof,
-                    eof_proc()
-            end;
-        stop -> ok
-    end.
-
-% output format proc
-output_format_proc(OutputFormat) ->
-    receive
-        {output, KV} ->
-            output_format_proc(OutputFormat(KV));
+            From ! H,
+            input_proc(T);
         stop -> ok
     end.
 
 % map proc
-map_proc(Map, InputFormatProc, EmitIntermediate) ->
-    InputFormatProc ! {self(), next},
-    receive
-        {K, V} ->
-            Map({K, V}, EmitIntermediate),
-            map_proc(Map, InputFormatProc, EmitIntermediate);
-        eof -> ok
-    end.
+map_proc(Map, InputPid, Emit) ->
+    task_proc(InputPid, fun (KV) -> Map(KV, Emit) end).
 
 % reduce proc
-reduce_proc(Reduce, IntermediateInputProc, OutputFormatProc) ->
-    IntermediateInputProc ! {self(), next},
+reduce_proc(Reduce, InputPid, Emit) ->
+    task_proc(InputPid, fun (KV) -> Emit(Reduce(KV)) end).
+
+% task proc
+task_proc(InputPid, ProcessAndEmit) ->
+    InputPid ! {self(), next},
     receive
-        {K, ListOfV} ->
-            V = Reduce({K, ListOfV}),
-            OutputFormatProc ! {output, {K, V}},
-            reduce_proc(Reduce, IntermediateInputProc, OutputFormatProc);
-        eof -> ok
+        eof -> ok;
+        KV ->
+            ProcessAndEmit(KV),
+            task_proc(InputPid, ProcessAndEmit)
     end.
