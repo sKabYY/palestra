@@ -29,8 +29,8 @@ wc_load_file(Filename) ->
 
 wc_load_file_acc(Acc, Lineno, S) ->
     case io:get_line(S, '') of
-        eof -> file:close(S), Acc;
-        Line -> wc_load_file_acc(Acc ++ [{Lineno, Line}], Lineno + 1, S)
+        eof -> file:close(S), lists:reverse(Acc);
+        Line -> wc_load_file_acc([{Lineno, Line}|Acc], Lineno + 1, S)
     end.
 
 wc_map({_, Line}, Emit) ->
@@ -69,8 +69,8 @@ m3_loadfile(Filename) ->
 
 m3_loadfile_acc(Acc, S) ->
     case io:read(S, '') of
-        {ok, Datum} -> m3_loadfile_acc(Acc ++ [Datum], S);
-        eof -> file:close(S), Acc
+        {ok, Datum} -> m3_loadfile_acc([Datum|Acc], S);
+        eof -> file:close(S), lists:reverse(Acc)
     end.
 
 m3_mk_pair(A1, A2) ->
@@ -79,10 +79,10 @@ m3_mk_pair(A1, A2) ->
 % Index, Array, Size
 m3_mk_pair_acc(Acc, I1, I2, A1, A2, S1, S2) ->
     if
-        I2 == S2 -> Acc;
+        I2 == S2 -> lists:reverse(Acc);
         true -> NextI1 = I1 + 1,
                 Pair = {{I1, I2}, {array:get(I1, A1), array:get(I2, A2)}},
-                NewAcc = Acc ++ [Pair],
+                NewAcc = [Pair|Acc],
                 if
                     NextI1 == S1 ->
                         m3_mk_pair_acc(NewAcc,
@@ -157,6 +157,7 @@ m3gzc(N) ->
     mrlib:info("load files: ~p, ~p", [TrainDataPath, TestDataPath]),
     TrainData = m3_loadfile(TrainDataPath),
     TestData = m3_loadfile(TestDataPath),
+    mrlib:info("#train=~p, #test=~p", [length(TrainData), length(TestData)]),
     mrlib:info("preprocess", []),
     {PosDataL, NegDataL} =
         lists:foldl(

@@ -116,14 +116,16 @@ wait_workers(Pids) ->
 
 % output proc
 output_proc() ->
-    output_proc_loop(queue:new()).
+    output_proc_loop([]).
 
 output_proc_loop(Queue) ->
     receive
         {emit, KV} ->
-            output_proc_loop(queue:in(KV, Queue));
+            output_proc_loop([KV|Queue]);
         {pull, From} ->
-            From ! queue:to_list(Queue),
+            info("sending data -- OUTPUT", []),
+            From ! lists:reverse(Queue),
+            info("ok -- OUTPUT", []),
             output_proc_loop(Queue);
         stop -> ok
     end.
@@ -135,9 +137,15 @@ groupby_proc() ->
 groupby_proc_loop(Bucket) ->
     receive
         {emit, {K, V}} ->
-            groupby_proc_loop(dict:append(K, V, Bucket));
+            groupby_proc_loop(dict:update(
+                                K,
+                                fun (Vs) -> [V|Vs] end,
+                                [V],
+                                Bucket));
         {pull, From} ->
+            info("sending data -- GROUPBY", []),
             From ! dict:to_list(Bucket),
+            info("ok -- GROUPBY", []),
             groupby_proc_loop(Bucket);
         stop -> ok
     end.
