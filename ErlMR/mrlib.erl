@@ -2,6 +2,7 @@
 -export([mapreduce/3,
          default_map/2,
          default_reduce/1,
+         info/2,
          pprint/1]).
 
 % map: {k1, v1} -> [{k2, v2}]

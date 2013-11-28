@@ -149,12 +149,15 @@ extidx(Data) ->
                         Data)).
 
 m3gzc(N) ->
+    mrlib:info("go~~", []),
 %    TrainDataPath = "testdata/simple.erldat",
 %    TestDataPath = "testdata/simple.erldat",
     TrainDataPath = "testdata/traindata.erldat",
     TestDataPath = "testdata/testdata.erldat",
+    mrlib:info("load files: ~p, ~p", [TrainDataPath, TestDataPath]),
     TrainData = m3_loadfile(TrainDataPath),
     TestData = m3_loadfile(TestDataPath),
+    mrlib:info("preprocess", []),
     {PosDataL, NegDataL} =
         lists:foldl(
           fun ({Label, Vec}, {Ps, Ns}) ->
@@ -167,8 +170,10 @@ m3gzc(N) ->
           TrainData),
     PosData = array:from_list(PosDataL),
     NegData = array:from_list(NegDataL),
+    mrlib:info("mkpair", []),
     InputList = m3_mk_pair(PosData, NegData),
     Lambda = 0.5,
+    mrlib:info("start mapreduce", []),
     Output = mrlib:mapreduce(
                N,
                InputList,
