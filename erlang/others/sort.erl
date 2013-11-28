@@ -7,9 +7,9 @@ wsort([H|T]) ->
 
 fsort([]) -> [];
 fsort([H|T]) ->
-    wsort(lists:filter(fun (X) -> X < H end, T))
+    fsort(lists:filter(fun (X) -> X < H end, T))
         ++ [H] ++
-        wsort(lists:filter(fun (X) -> X >= H end, T)).
+        fsort(lists:filter(fun (X) -> X >= H end, T)).
 
 qsort([]) -> [];
 qsort([H|T]) ->
@@ -62,7 +62,7 @@ randlist_acc(Acc, 0) -> Acc;
 randlist_acc(Acc, N) -> randlist_acc([random:uniform()|Acc], N - 1).
 
 test() ->
-    List = randlist(100000),
+    List = randlist(1000000),
     Answer = lists:sort(List),
     lists:foreach(
       fun (F) -> test_one(F, List, Answer) end,

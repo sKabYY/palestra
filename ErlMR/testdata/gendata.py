@@ -21,8 +21,8 @@ def gen_and_write(fn, num):
 
 
 def main():
-    num_train = 1000
-    num_test = 100
+    num_train = 200
+    num_test = 20
     trainfn = 'traindata.erldat'
     testfn = 'testdata.erldat'
     gen_and_write(trainfn, num_train)

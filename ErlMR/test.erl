@@ -130,29 +130,29 @@ gzc(Lambda, Vp, Vn, Vx) ->
 m3_gzc_mk_map(Lambda, Tests) ->
     fun ({{PosIdx, _}, {PosVec, NegVec}}, Emit) ->
             lists:foreach(
-              fun ({Idx, Vx}) ->
+              fun ({IdxLabel, Vx}) ->
                       Score = gzc(Lambda, PosVec, NegVec, Vx),
-                      Emit({{Idx, PosIdx}, Score})
+                      Emit({{IdxLabel, PosIdx}, Score})
               end,
               Tests)
     end.
 
-m3_gzc_min_reduce({{Idx, _}, ListOfScore}) -> {Idx, lists:min(ListOfScore)}.
+m3_gzc_min_reduce({{IdxLabel, _}, ListOfScore}) -> {IdxLabel, lists:min(ListOfScore)}.
 
-m3_gzc_max_reduce({Idx, ListOfScore}) -> {Idx, lists:max(ListOfScore)}.
+m3_gzc_max_reduce({IdxLabel, ListOfScore}) -> {IdxLabel, lists:max(ListOfScore)}.
 
 % TestData starts from 1
 extidx(Data) ->
     Len = length(Data),
-    lists:map(fun ({Idx, {_, Vx}}) -> {Idx, Vx} end,
+    lists:map(fun ({Idx, {Label, Vx}}) -> {{Idx, Label}, Vx} end,
               lists:zip(lists:seq(1, Len),
                         Data)).
 
 m3gzc(N) ->
-    TrainDataPath = "testdata/simple.erldat",
-    TestDataPath = "testdata/simple.erldat",
-%    TrainDataPath = "testdata/traindata.erldat",
-%    TestDataPath = "testdata/testdata.erldat",
+%    TrainDataPath = "testdata/simple.erldat",
+%    TestDataPath = "testdata/simple.erldat",
+    TrainDataPath = "testdata/traindata.erldat",
+    TestDataPath = "testdata/testdata.erldat",
     TrainData = m3_loadfile(TrainDataPath),
     TestData = m3_loadfile(TestDataPath),
     {PosDataL, NegDataL} =

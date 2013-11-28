@@ -39,14 +39,14 @@ mapreduce_iter(N, InputList, [Task|Tail]) ->
     mapreduce_iter(N, IntermediateList, Tail).
 
 start_task(N, InputList, Task, IntermediateProcFunc) ->
-    InputPid = start_tracker(fun () -> input_proc(InputList) end),
-    IntermediatePid = start_tracker(IntermediateProcFunc),
+    InputPid = start_tracker(fun () -> input_proc(InputList) end, input),
+    IntermediatePid = start_tracker(IntermediateProcFunc, intermediate),
     Emit = fun (KV) -> IntermediatePid ! {emit, KV} end,
     WorkerPids = case Task of
                      {map, Map} ->
-                         start_workern(N, fun () -> map_proc(Map, InputPid, Emit) end);
+                         start_workern(N, fun () -> map_proc(Map, InputPid, Emit) end, mapper);
                      {reduce, Reduce} ->
-                         start_workern(N, fun () -> reduce_proc(Reduce, InputPid, Emit) end)
+                         start_workern(N, fun () -> reduce_proc(Reduce, InputPid, Emit) end, reducer)
                  end,
     wait_workers(WorkerPids),
     stop_tracker(InputPid),
@@ -56,8 +56,14 @@ start_task(N, InputList, Task, IntermediateProcFunc) ->
 % worker: map_proc and reduce_proc, stop after receive 'eof'
 % tracker: stop after receive 'stop'
 
+mr_register(Type, Desc, Pid) ->
+    register(list_to_atom(lists:flatten(io_lib:format("~p~p: ~p", [Pid, Type, Desc]))), Pid).
+
 % tracker
-start_tracker(F) -> spawn(F).
+start_tracker(F, Desc) ->
+    Pid = spawn(F),
+    mr_register(tracker, Desc, Pid),
+    Pid.
 
 stop_tracker(Pid) -> Pid ! stop, ok.
 
@@ -70,13 +76,14 @@ pull_and_stop_tracker(Pid) ->
     end.
 
 % worker
-start_workern(N, F) ->
-    start_workern_iter([], N, F).
+start_workern(N, F, Desc) ->
+    start_workern_iter([], N, F, Desc).
 
-start_workern_iter(Acc, 0, _) -> Acc;
-start_workern_iter(Acc, N, F) ->
+start_workern_iter(Acc, 0, _, _) -> Acc;
+start_workern_iter(Acc, N, F, Desc) ->
     Pid = spawn_link(F),
-    start_workern_iter([Pid|Acc], N - 1, F).
+    mr_register(worker, Desc, Pid),
+    start_workern_iter([Pid|Acc], N - 1, F, Desc).
 
 wait_workers([]) -> ok;
 wait_workers(Pids) ->
@@ -87,15 +94,15 @@ wait_workers(Pids) ->
 
 % output proc
 output_proc() ->
-    output_proc_loop([]).
+    output_proc_loop(queue:new()).
 
-output_proc_loop(List) ->
+output_proc_loop(Queue) ->
     receive
         {emit, KV} ->
-            output_proc_loop(List ++ [KV]);
+            output_proc_loop(queue:in(KV, Queue));
         {pull, From} ->
-            From ! List,
-            output_proc_loop(List);
+            From ! queue:to_list(Queue),
+            output_proc_loop(Queue);
         stop -> ok
     end.
 
