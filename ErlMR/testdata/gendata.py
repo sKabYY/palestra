@@ -20,9 +20,7 @@ def gen_and_write(fn, num):
             print >>f, newline
 
 
-def main():
-    num_train = 200
-    num_test = 20
+def main(num_train, num_test):
     trainfn = 'traindata.erldat'
     testfn = 'testdata.erldat'
     gen_and_write(trainfn, num_train)
@@ -30,4 +28,7 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    num_train = int(sys.argv[1])
+    num_test = int(sys.argv[2])
+    main(num_train, num_test)

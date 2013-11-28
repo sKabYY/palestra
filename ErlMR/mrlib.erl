@@ -9,6 +9,9 @@
 
 % some usefull functions %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% log info
+info(Template, Args) -> io:format("[~p]\t" ++ Template ++ "~n", [now()|Args]).
+
 % pretty print
 pprint(Datum) -> io:format("~p~n", [Datum]).
 
@@ -39,25 +42,43 @@ mapreduce_iter(N, InputList, [Task|Tail]) ->
     mapreduce_iter(N, IntermediateList, Tail).
 
 start_task(N, InputList, Task, IntermediateProcFunc) ->
+    info("start task", []),
     InputPid = start_tracker(fun () -> input_proc(InputList) end, input),
     IntermediatePid = start_tracker(IntermediateProcFunc, intermediate),
     Emit = fun (KV) -> IntermediatePid ! {emit, KV} end,
     WorkerPids = case Task of
                      {map, Map} ->
-                         start_workern(N, fun () -> map_proc(Map, InputPid, Emit) end, mapper);
+                         start_workern(
+                           N,
+                           fun () ->
+                                   map_proc(Map, InputPid, Emit)
+                           end,
+                           mapper);
                      {reduce, Reduce} ->
-                         start_workern(N, fun () -> reduce_proc(Reduce, InputPid, Emit) end, reducer)
+                         start_workern(
+                           N,
+                           fun () ->
+                                   reduce_proc(Reduce, InputPid, Emit)
+                           end,
+                           reducer)
                  end,
+    info("waiting workers", []),
     wait_workers(WorkerPids),
     stop_tracker(InputPid),
-    pull_and_stop_tracker(IntermediatePid).
+    info("pull output data", []),
+    Output = pull_and_stop_tracker(IntermediatePid),
+    info("done", []),
+    Output.
 
 % two types of processes: worker and tracker
 % worker: map_proc and reduce_proc, stop after receive 'eof'
 % tracker: stop after receive 'stop'
 
 mr_register(Type, Desc, Pid) ->
-    register(list_to_atom(lists:flatten(io_lib:format("~p~p: ~p", [Pid, Type, Desc]))), Pid).
+    register(list_to_atom(
+               lists:flatten(
+                 io_lib:format("~p~p: ~p", [Pid, Type, Desc]))),
+             Pid).
 
 % tracker
 start_tracker(F, Desc) ->
