@@ -78,8 +78,9 @@ start_workern_iter(Acc, N, F, RoundNo) ->
 wait_workers([]) -> ok;
 wait_workers(Pids) ->
     receive
-        {'EXIT', Pid, _Why} ->
-            wait_workers([X || X <- Pids, X =/= Pid])
+        {'EXIT', Pid, normal} ->
+            wait_workers([X || X <- Pids, X =/= Pid]);
+        {'EXIT', Pid, Why} -> throw({dead_worker, Pid, Why})
     end.
 
 start_output() ->
