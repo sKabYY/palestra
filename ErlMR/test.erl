@@ -1,7 +1,8 @@
 -module(test).
 -export([start/1,
          wc/1,
-         m3gzc/1]).
+         m3gzc/1,
+         m3gzc2/1]).
 -import(mrlib,
         [mapreduce/3,
          info/2]).
@@ -154,8 +155,6 @@ extidx(Data) ->
 
 m3gzc(N) ->
     info("go~~", []),
-%    TrainDataPath = "testdata/simple.erldat",
-%    TestDataPath = "testdata/simple.erldat",
     TrainDataPath = "testdata/traindata.erldat",
     TestDataPath = "testdata/testdata.erldat",
     info("load files: ~p, ~p", [TrainDataPath, TestDataPath]),
@@ -163,16 +162,13 @@ m3gzc(N) ->
     TestData = m3_loadfile(TestDataPath),
     info("#train=~p, #test=~p", [length(TrainData), length(TestData)]),
     info("preprocess", []),
-    {PosDataL, NegDataL} =
-        lists:foldl(
-          fun ({Label, Vec}, {Ps, Ns}) ->
-                  if
-                      Label > 0 -> {[Vec|Ps], Ns};
-                      true -> {Ps, [Vec|Ns]}
-                  end
-          end,
-          {[], []},
+    {PosDataLWithLabel, NegDataLWithLabel} =
+        lists:partition(
+          fun({Label, _}) -> Label > 0 end,
           TrainData),
+    RemoveLabel = fun (L) -> lists:map(fun ({_, V}) -> V end, L) end,
+    PosDataL = RemoveLabel(PosDataLWithLabel),
+    NegDataL = RemoveLabel(NegDataLWithLabel),
     PosData = array:from_list(PosDataL),
     NegData = array:from_list(NegDataL),
     info("mkpair", []),
@@ -185,6 +181,56 @@ m3gzc(N) ->
                [{map, m3_gzc_mk_map(Lambda, extidx(TestData))},
                 {reduce, fun m3_gzc_min_reduce/1},
                 {reduce, fun m3_gzc_max_reduce/1}]),
+    lists:map(
+      fun ({{Idx, Label}, Value}) ->
+              {Idx, Label * Value > 0, Value}
+      end,
+      lists:keysort(1, Output)).
+
+% m3gzc2: another version of mapreduce m3gzc %%%%%%%%%%%%%%%
+m3gzc2_mk_map(Lambda, NegData, Tests) ->
+    fun ({_, Vp}, Emit) ->
+            lists:foreach(
+              fun ({IdxLabel, Vx}) ->
+                      Score = lists:min(
+                                lists:map(
+                                  fun (Vn) ->
+                                          gzc(Lambda, Vp, Vn, Vx)
+                                  end,
+                                  NegData)),
+                      Emit({IdxLabel, Score})
+              end,
+              Tests)
+    end.
+
+m3gzc2_reduce(KV) -> m3_gzc_max_reduce(KV).
+
+m3gzc2(N) ->
+    info("go~~", []),
+    TrainDataPath = "testdata/traindata.erldat",
+    TestDataPath = "testdata/testdata.erldat",
+    info("load files: ~p, ~p", [TrainDataPath, TestDataPath]),
+    TrainData = m3_loadfile(TrainDataPath),
+    TestData = m3_loadfile(TestDataPath),
+    info("#train=~p, #test=~p", [length(TrainData), length(TestData)]),
+    info("preprocess", []),
+    {PosDataLWithLabel, NegDataLWithLabel} =
+        lists:partition(
+          fun({Label, _}) -> Label > 0 end,
+          TrainData),
+    RemoveLabel = fun (L) -> lists:map(fun ({_, V}) -> V end, L) end,
+    PosData = RemoveLabel(PosDataLWithLabel),
+    NegData = RemoveLabel(NegDataLWithLabel),
+    InputList = lists:zip(lists:seq(1, length(PosData)), PosData),
+    Lambda = 0.5,
+    info("start mapreduce", []),
+    Output = mapreduce(
+               N,
+               InputList,
+               [{map, m3gzc2_mk_map(Lambda,
+                                    NegData,
+                                    extidx(TestData))},
+                {reduce, fun m3gzc2_reduce/1}]),
     lists:map(
       fun ({{Idx, Label}, Value}) ->
               {Idx, Label * Value > 0, Value}

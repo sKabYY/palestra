@@ -24,6 +24,7 @@ default_reduce({K, ListOfV}) -> {K, ListOfV}.
 
 % register
 mr_register(Pid, Template, Args) ->
+    % Do not register main process!!!
     register(list_to_atom(
                lists:flatten(
                  io_lib:format("~p" ++ Template, [Pid|Args]))),
@@ -41,7 +42,6 @@ mr_register(Pid, Template, Args) ->
 mapreduce(_, _, []) -> {error, "The tasks is empty."};
 mapreduce(N, InputList, Tasks) when is_list(Tasks) ->
     process_flag(trap_exit, true),
-    mr_register(self(), "vampire", []),
     WorkerPids = start_workern(N, fun input_proc/0, 1),
     info("spliting input data", []),
     lists:foreach(mk_emit_hash(WorkerPids), InputList),
