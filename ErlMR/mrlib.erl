@@ -22,6 +22,13 @@ default_map({K, V}, Emit) -> Emit({K, V}).
 % default reduce
 default_reduce({K, ListOfV}) -> {K, ListOfV}.
 
+% register
+mr_register(Pid, Template, Args) ->
+    register(list_to_atom(
+               lists:flatten(
+                 io_lib:format("~p" ++ Template, [Pid|Args]))),
+             Pid).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % N: the max number of workers
@@ -34,20 +41,21 @@ default_reduce({K, ListOfV}) -> {K, ListOfV}.
 mapreduce(_, _, []) -> {error, "The tasks is empty."};
 mapreduce(N, InputList, Tasks) when is_list(Tasks) ->
     process_flag(trap_exit, true),
-    WorkerPids = start_workern(N, fun input_proc/0),
+    mr_register(self(), "vampire", []),
+    WorkerPids = start_workern(N, fun input_proc/0, 1),
     info("spliting input data", []),
     lists:foreach(mk_emit_hash(WorkerPids), InputList),
     info("go~~", []),
-    mapreduce_iter(N, WorkerPids, Tasks).
+    mapreduce_iter(N, WorkerPids, Tasks, 2).
 
-mapreduce_iter(_, WorkerPids, [Task]) ->
+mapreduce_iter(_, WorkerPids, [Task], _) ->
     OutputPid = start_output(),
     start_and_wait(WorkerPids, Task, mk_emit_one(OutputPid)),
     get_output(OutputPid);
-mapreduce_iter(N, WorkerPids, [Task|Tail]) ->
-    OutputPids = start_workern(N, fun groupby_proc/0),
+mapreduce_iter(N, WorkerPids, [Task|Tail], RoundNo) ->
+    OutputPids = start_workern(N, fun groupby_proc/0, RoundNo),
     start_and_wait(WorkerPids, Task, mk_emit_hash(OutputPids)),
-    mapreduce_iter(N, OutputPids, Tail).
+    mapreduce_iter(N, OutputPids, Tail, RoundNo + 1).
 
 start_and_wait(WorkerPids, Task, Emit) ->
     info("start task: ~p", [Task]),
@@ -58,13 +66,14 @@ start_and_wait(WorkerPids, Task, Emit) ->
     info("task done", []).
 
 % worker
-start_workern(N, F) ->
-    start_workern_iter([], N, F).
+start_workern(N, F, RoundNo) ->
+    start_workern_iter([], N, F, RoundNo).
 
-start_workern_iter(Acc, 0, _) -> Acc;
-start_workern_iter(Acc, N, F) ->
+start_workern_iter(Acc, 0, _, _) -> Acc;
+start_workern_iter(Acc, N, F, RoundNo) ->
     Pid = spawn_link(F),
-    start_workern_iter([Pid|Acc], N - 1, F).
+    mr_register(Pid, "worker#~p", [RoundNo]),
+    start_workern_iter([Pid|Acc], N - 1, F, RoundNo).
 
 wait_workers([]) -> ok;
 wait_workers(Pids) ->
@@ -72,6 +81,12 @@ wait_workers(Pids) ->
         {'EXIT', Pid, _Why} ->
             wait_workers([X || X <- Pids, X =/= Pid])
     end.
+
+start_output() ->
+    F = fun output_proc/0,
+    Pid = spawn(F),
+    mr_register(Pid, "output", []),
+    Pid.
 
 % make emit functions
 mk_emit_one(Pid) ->
@@ -109,8 +124,6 @@ output_and_stop({output, From}, Output) ->
     info("sending data -- OUTPUT", []),
     From ! Output,
     info("ok -- OUTPUT", []).
-
-start_output() -> spawn(fun output_proc/0).
 
 get_output(Pid) ->
     Pid ! {output, self()},
