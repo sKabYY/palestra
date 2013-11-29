@@ -21,8 +21,11 @@ def gen_and_write(fn, num):
 
 
 def main(num_train, num_test):
-    trainfn = 'traindata.erldat'
-    testfn = 'testdata.erldat'
+    def P(fn):
+        _dir = 'testdata'
+        return '%s/%s' % (_dir, fn)
+    trainfn = P('traindata.erldat')
+    testfn = P('testdata.erldat')
     gen_and_write(trainfn, num_train)
     gen_and_write(testfn, num_test)
 

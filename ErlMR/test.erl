@@ -2,6 +2,9 @@
 -export([start/1,
          wc/1,
          m3gzc/1]).
+-import(mrlib,
+        [mapreduce/3,
+         info/2]).
 
 % simple test %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 simple_map({K, V}, Emit) ->
@@ -17,7 +20,7 @@ start(N) ->
                  {c, 3}],
     Map = fun simple_map/2,
     Reduce = fun simple_reduce/1,
-    mrlib:mapreduce(
+    mapreduce(
       N,
       TestInput,
       [{map, Map}, {reduce, Reduce}]).
@@ -44,10 +47,11 @@ wc(N) ->
     InputList = wc_load_file("mrlib.erl"),
     Map = fun wc_map/2,
     Reduce = fun wc_reduce/1,
-    mrlib:mapreduce(
-      N,
-      InputList,
-      [{map, Map}, {reduce, Reduce}]).
+    Output = mapreduce(
+               N,
+               InputList,
+               [{map, Map}, {reduce, Reduce}]),
+    lists:reverse(lists:keysort(2, Output)).
 
 % simple m3gzc %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %mk_datum_input_format(Filename) ->
@@ -149,16 +153,16 @@ extidx(Data) ->
                         Data)).
 
 m3gzc(N) ->
-    mrlib:info("go~~", []),
+    info("go~~", []),
 %    TrainDataPath = "testdata/simple.erldat",
 %    TestDataPath = "testdata/simple.erldat",
     TrainDataPath = "testdata/traindata.erldat",
     TestDataPath = "testdata/testdata.erldat",
-    mrlib:info("load files: ~p, ~p", [TrainDataPath, TestDataPath]),
+    info("load files: ~p, ~p", [TrainDataPath, TestDataPath]),
     TrainData = m3_loadfile(TrainDataPath),
     TestData = m3_loadfile(TestDataPath),
-    mrlib:info("#train=~p, #test=~p", [length(TrainData), length(TestData)]),
-    mrlib:info("preprocess", []),
+    info("#train=~p, #test=~p", [length(TrainData), length(TestData)]),
+    info("preprocess", []),
     {PosDataL, NegDataL} =
         lists:foldl(
           fun ({Label, Vec}, {Ps, Ns}) ->
@@ -171,14 +175,18 @@ m3gzc(N) ->
           TrainData),
     PosData = array:from_list(PosDataL),
     NegData = array:from_list(NegDataL),
-    mrlib:info("mkpair", []),
+    info("mkpair", []),
     InputList = m3_mk_pair(PosData, NegData),
     Lambda = 0.5,
-    mrlib:info("start mapreduce", []),
-    Output = mrlib:mapreduce(
+    info("start mapreduce", []),
+    Output = mapreduce(
                N,
                InputList,
                [{map, m3_gzc_mk_map(Lambda, extidx(TestData))},
                 {reduce, fun m3_gzc_min_reduce/1},
                 {reduce, fun m3_gzc_max_reduce/1}]),
-    lists:keysort(1, Output).
+    lists:map(
+      fun ({{Idx, Label}, Value}) ->
+              {Idx, Label * Value > 0, Value}
+      end,
+      lists:keysort(1, Output)).

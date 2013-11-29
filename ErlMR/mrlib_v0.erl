@@ -1,4 +1,4 @@
--module(mrlib).
+-module(mrlib_v0).
 -export([mapreduce/3,
          default_map/2,
          default_reduce/1,

@@ -34,78 +34,37 @@ default_reduce({K, ListOfV}) -> {K, ListOfV}.
 mapreduce(_, _, []) -> {error, "The tasks is empty."};
 mapreduce(N, InputList, Tasks) when is_list(Tasks) ->
     process_flag(trap_exit, true),
-    mapreduce_iter(N, InputList, Tasks).
+    WorkerPids = start_workern(N, fun input_proc/0),
+    info("spliting input data", []),
+    lists:foreach(mk_emit_hash(WorkerPids), InputList),
+    info("go~~", []),
+    mapreduce_iter(N, WorkerPids, Tasks).
 
-mapreduce_iter(N, InputList, [Task]) ->
-    start_task(N, InputList, Task, fun output_proc/0);
-mapreduce_iter(N, InputList, [Task|Tail]) ->
-    IntermediateList = start_task(N, InputList, Task, fun groupby_proc/0),
-    mapreduce_iter(N, IntermediateList, Tail).
+mapreduce_iter(_, WorkerPids, [Task]) ->
+    OutputPid = start_output(),
+    start_and_wait(WorkerPids, Task, mk_emit_one(OutputPid)),
+    get_output(OutputPid);
+mapreduce_iter(N, WorkerPids, [Task|Tail]) ->
+    OutputPids = start_workern(N, fun groupby_proc/0),
+    start_and_wait(WorkerPids, Task, mk_emit_hash(OutputPids)),
+    mapreduce_iter(N, OutputPids, Tail).
 
-start_task(N, InputList, Task, IntermediateProcFunc) ->
-    info("start task", []),
-    InputPid = start_tracker(fun () -> input_proc(InputList) end, input),
-    IntermediatePid = start_tracker(IntermediateProcFunc, intermediate),
-    Emit = fun (KV) -> IntermediatePid ! {emit, KV} end,
-    WorkerPids = case Task of
-                     {map, Map} ->
-                         start_workern(
-                           N,
-                           fun () ->
-                                   map_proc(Map, InputPid, Emit)
-                           end,
-                           mapper);
-                     {reduce, Reduce} ->
-                         start_workern(
-                           N,
-                           fun () ->
-                                   reduce_proc(Reduce, InputPid, Emit)
-                           end,
-                           reducer)
-                 end,
-    info("waiting workers", []),
+start_and_wait(WorkerPids, Task, Emit) ->
+    info("start task: ~p", [Task]),
+    lists:foreach(
+      fun (Pid) -> Pid ! {Task, Emit} end,
+      WorkerPids),
     wait_workers(WorkerPids),
-    stop_tracker(InputPid),
-    info("pull output data", []),
-    Output = pull_and_stop_tracker(IntermediatePid),
-    info("done", []),
-    Output.
-
-% two types of processes: worker and tracker
-% worker: map_proc and reduce_proc, stop after receive 'eof'
-% tracker: stop after receive 'stop'
-
-mr_register(Type, Desc, Pid) ->
-    register(list_to_atom(
-               lists:flatten(
-                 io_lib:format("~p~p: ~p", [Pid, Type, Desc]))),
-             Pid).
-
-% tracker
-start_tracker(F, Desc) ->
-    Pid = spawn(F),
-    mr_register(tracker, Desc, Pid),
-    Pid.
-
-stop_tracker(Pid) -> Pid ! stop, ok.
-
-pull_and_stop_tracker(Pid) ->
-    Pid ! {pull, self()},
-    receive
-        Datum ->
-            Pid ! stop,
-            Datum
-    end.
+    info("task done", []).
 
 % worker
-start_workern(N, F, Desc) ->
-    start_workern_iter([], N, F, Desc).
+start_workern(N, F) ->
+    start_workern_iter([], N, F).
 
-start_workern_iter(Acc, 0, _, _) -> Acc;
-start_workern_iter(Acc, N, F, Desc) ->
+start_workern_iter(Acc, 0, _) -> Acc;
+start_workern_iter(Acc, N, F) ->
     Pid = spawn_link(F),
-    mr_register(worker, Desc, Pid),
-    start_workern_iter([Pid|Acc], N - 1, F, Desc).
+    start_workern_iter([Pid|Acc], N - 1, F).
 
 wait_workers([]) -> ok;
 wait_workers(Pids) ->
@@ -114,72 +73,85 @@ wait_workers(Pids) ->
             wait_workers([X || X <- Pids, X =/= Pid])
     end.
 
-% output proc
-output_proc() ->
-    output_proc_loop([]).
-
-output_proc_loop(Queue) ->
-    receive
-        {emit, KV} ->
-            output_proc_loop([KV|Queue]);
-        {pull, From} ->
-            info("sending data -- OUTPUT", []),
-            From ! lists:reverse(Queue),
-            info("ok -- OUTPUT", []),
-            output_proc_loop(Queue);
-        stop -> ok
+% make emit functions
+mk_emit_one(Pid) ->
+    fun (Datum) ->
+            Pid ! {emit, Datum}
     end.
 
-% groupby proc
-groupby_proc() ->
-    groupby_proc_loop(dict:new()).
+mk_emit_hash(Pids) ->
+    PidArr = array:from_list(Pids),
+    N = array:size(PidArr),
+    fun ({K, V}) ->
+            Idx = erlang:phash2(K, N),
+            array:get(Idx, PidArr) ! {emit, {K, V}}
+    end.
 
-groupby_proc_loop(Bucket) ->
+% receive proc
+% Func: a callback function to handle other messages.
+receive_proc(Store, Update, ToList, Func) ->
     receive
-        {emit, {K, V}} ->
-            groupby_proc_loop(dict:update(
-                                K,
-                                fun (Vs) -> [V|Vs] end,
-                                [V],
-                                Bucket));
-        {pull, From} ->
-            info("sending data -- GROUPBY", []),
-            From ! dict:to_list(Bucket),
-            info("ok -- GROUPBY", []),
-            groupby_proc_loop(Bucket);
-        stop -> ok
+        {emit, Datum} ->
+            receive_proc(Update(Datum, Store), Update, ToList, Func);
+        OtherMsg ->
+            Func(OtherMsg, ToList(Store))
+    end.
+
+% output proc
+output_proc() ->
+    receive_proc(
+      [],
+      fun (H, T) -> [H|T] end,
+      fun lists:reverse/1,
+      fun output_and_stop/2).
+
+output_and_stop({output, From}, Output) ->
+    info("sending data -- OUTPUT", []),
+    From ! Output,
+    info("ok -- OUTPUT", []).
+
+start_output() -> spawn(fun output_proc/0).
+
+get_output(Pid) ->
+    Pid ! {output, self()},
+    receive
+        Output -> Output
     end.
 
 % input proc
-input_proc([]) ->
-    receive
-        {From, next} ->
-            From ! eof,
-            input_proc([]);
-        stop -> ok
-    end;
-input_proc([H|T]) ->
-    receive
-        {From, next} ->
-            From ! H,
-            input_proc(T);
-        stop -> ok
-    end.
+input_proc() ->
+    receive_proc(
+      [],
+      fun (H, T) -> [H|T] end,
+      fun lists:reverse/1,
+      fun start_task_proc/2).
+
+% groupby proc
+groupby_proc() ->
+    receive_proc(
+      dict:new(),
+      fun ({K, V}, Bucket) ->
+              dict:update(K, fun (Vs) -> [V|Vs] end, [V], Bucket)
+      end,
+      fun dict:to_list/1,
+      fun start_task_proc/2).
+
+% start task proc
+start_task_proc({{map, Map}, Emit}, Output) ->
+    map_proc(Map, Output, Emit);
+start_task_proc({{reduce, Reduce}, Emit}, Output) ->
+    reduce_proc(Reduce, Output, Emit).
 
 % map proc
-map_proc(Map, InputPid, Emit) ->
-    task_proc(InputPid, fun (KV) -> Map(KV, Emit) end).
+map_proc(Map,InputList, Emit) ->
+    task_proc(fun (KV) -> Map(KV, Emit) end, InputList).
 
 % reduce proc
-reduce_proc(Reduce, InputPid, Emit) ->
-    task_proc(InputPid, fun (KV) -> Emit(Reduce(KV)) end).
+reduce_proc(Reduce, InputList, Emit) ->
+    task_proc(fun (KV) -> Emit(Reduce(KV)) end, InputList).
 
 % task proc
-task_proc(InputPid, ProcessAndEmit) ->
-    InputPid ! {self(), next},
-    receive
-        eof -> ok;
-        KV ->
-            ProcessAndEmit(KV),
-            task_proc(InputPid, ProcessAndEmit)
-    end.
+task_proc(_, []) -> ok;
+task_proc(ProcessAndEmit, [KV|Tail]) ->
+    ProcessAndEmit(KV),
+    task_proc(ProcessAndEmit, Tail).
