@@ -41,7 +41,7 @@ def sieve():
         yield x
         stream = stream_filter(
             divisible(x),
-            #lambda e: e % x != 0,  <-- why?
+            #lambda e: e % x != 0,  <-- Don't use this!
             stream)
 
 
