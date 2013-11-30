@@ -15,6 +15,11 @@ def integers_starting_from(i):
         i += 1
 
 
+def stream_discard(stream, n):
+    for _ in xrange(n):
+        stream.next()
+
+
 def stream_map(func, stream):
     while True:
         yield func(stream.next())
@@ -88,6 +93,71 @@ def add_stream(s1, s2):
         yield s1.next() + s2.next()
 
 
+def stream_cons(v, f):
+    yield v
+    while True:
+        yield f().next()
+
+
+def partial_sums_with_init(stream, init):
+    def _s():
+        return stream_cons(init, lambda: add_stream(stream, feedback))
+    output, feedback = tee(_s())
+    return output
+
+
+def integral(stream, init, dt):
+    def _s():
+        return stream_cons(
+            init,
+            lambda: add_stream(
+                stream_map(
+                    lambda x: x * dt,
+                    stream),
+                feedback))
+    output, feedback = tee(_s())
+    return output
+
+
+def delayed_integral(delayed_stream, init, dt):
+    def _s():
+        return stream_cons(
+            init,
+            lambda: add_stream(
+                stream_map(
+                    lambda x: x * dt,
+                    delayed_stream()),
+                feedback))
+    output, feedback = tee(_s())
+    return output
+
+
+def solve(f, y0, dt):
+    '''
+    dy/dt = f(y),
+    y(0) = y0
+    flow:
+
+                                         y0
+                                         |
+                                         |
+                                         v
+                  +----------+      +----------+
+                  |          |  dy  |          |
+              +-->|  map: f  +----->| integral +---+----> y
+              |   |          |      |          |   |
+              |   +----------+      +----------+   |
+              |                                    |
+              |                                    |
+              +------------------------------------+
+    '''
+    def _s():
+        dy = lambda: stream_map(f, feedback)
+        return delayed_integral(dy, y0, dt)
+    output, feedback = tee(_s())
+    return output
+
+
 def odd(x):
     return x % 2 == 1
 
@@ -97,41 +167,69 @@ def even(x):
 
 
 def test_sieve():
-    print 'sieve'
     printn(100, sieve())
 
 
 def test_partial_sums():
-    print 'partial sums'
     printn(10,
            partial_sums(
                stream_filter(odd, integers_starting_from(1))))
 
 
 def test_pi_stream():
-    print 'pi stream'
     printn(10, pi_stream())
 
 
 def test_euler_transform():
-    print 'euler transform'
     printn(10, euler_transform(pi_stream()))
 
 
 def test_accelerated_sequence():
-    print 'accelerated sequence'
     # Will overflow after 9.
     printn(9, accelerated_sequence(euler_transform, pi_stream()))
 
 
 def test_add_stream():
-    print 'add stream'
     printn(10, add_stream(integers_starting_from(1),
                           integers_starting_from(2)))
 
 
+def test_partial_sums_with_init():
+    printn(10,
+           partial_sums_with_init(
+               integers_starting_from(1), 0))
+
+
+def test_integral():
+    '''
+    1/3 * x^3 {x<-1} = 1/3
+    '''
+    n = 10000
+    stream = integral(
+        stream_map(
+            lambda x: x * x,
+            stream_map(
+                lambda x: float(x) / n,
+                integers_starting_from(0))),
+        0,
+        1.0 / n)
+    stream_discard(stream, n)
+    print stream.next()
+
+
+def test_solve():
+    '''
+    dy/dt = y, y0 = 1 => y1 = e
+    '''
+    n = 10000
+    stream = solve(lambda y: y, 1, 1.0 / n)
+    stream_discard(stream, n)
+    print stream.next()
+
+
 def test_all(l):
     for f in l:
+        print '%s:' % f.__name__
         f()
         print
 
@@ -144,4 +242,7 @@ if __name__ == '__main__':
         test_euler_transform,
         test_accelerated_sequence,
         test_add_stream,
+        test_partial_sums_with_init,
+        test_integral,
+        test_solve,
     ])
