@@ -33,37 +33,37 @@ mr_register(Pid, Template, Args) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 % N: the max number of workers
-% Tasks: [Task]
-% Task: {map, Map} or {reduce, Reduce}
+% Phases: [Phase]
+% Phase: {map, Map} or {reduce, Reduce}
 % Map: {K, V} X Emit-> void
 % Emit: {K, V} -> void
 % Reduce: {K, [V]} -> V
 
-mapreduce(_, _, []) -> {error, "The tasks is empty."};
-mapreduce(N, InputList, Tasks) when is_list(Tasks) ->
+mapreduce(_, _, []) -> {error, "The phases is empty."};
+mapreduce(N, InputList, Phases) when is_list(Phases) ->
     process_flag(trap_exit, true),
     WorkerPids = start_workern(N, fun input_proc/0, 1),
     info("spliting input data", []),
     lists:foreach(mk_emit_hash(WorkerPids), InputList),
     info("go~~", []),
-    mapreduce_iter(N, WorkerPids, Tasks, 2).
+    mapreduce_iter(N, WorkerPids, Phases, 2).
 
-mapreduce_iter(_, WorkerPids, [Task], _) ->
+mapreduce_iter(_, WorkerPids, [Phase], _) ->
     OutputPid = start_output(),
-    start_and_wait(WorkerPids, Task, mk_emit_one(OutputPid)),
+    start_and_wait(WorkerPids, Phase, mk_emit_one(OutputPid)),
     get_output(OutputPid);
-mapreduce_iter(N, WorkerPids, [Task|Tail], RoundNo) ->
+mapreduce_iter(N, WorkerPids, [Phase|Tail], RoundNo) ->
     OutputPids = start_workern(N, fun groupby_proc/0, RoundNo),
-    start_and_wait(WorkerPids, Task, mk_emit_hash(OutputPids)),
+    start_and_wait(WorkerPids, Phase, mk_emit_hash(OutputPids)),
     mapreduce_iter(N, OutputPids, Tail, RoundNo + 1).
 
-start_and_wait(WorkerPids, Task, Emit) ->
-    info("start task: ~p", [Task]),
+start_and_wait(WorkerPids, Phase, Emit) ->
+    info("start phase: ~p", [Phase]),
     lists:foreach(
-      fun (Pid) -> Pid ! {Task, Emit} end,
+      fun (Pid) -> Pid ! {Phase, Emit} end,
       WorkerPids),
     wait_workers(WorkerPids),
-    info("task done", []).
+    info("phase done", []).
 
 % worker
 start_workern(N, F, RoundNo) ->
@@ -138,7 +138,7 @@ input_proc() ->
       [],
       fun (H, T) -> [H|T] end,
       fun lists:reverse/1,
-      fun start_task_proc/2).
+      fun start_phase_proc/2).
 
 % groupby proc
 groupby_proc() ->
@@ -148,24 +148,24 @@ groupby_proc() ->
               dict:update(K, fun (Vs) -> [V|Vs] end, [V], Bucket)
       end,
       fun dict:to_list/1,
-      fun start_task_proc/2).
+      fun start_phase_proc/2).
 
-% start task proc
-start_task_proc({{map, Map}, Emit}, Output) ->
+% start phase proc
+start_phase_proc({{map, Map}, Emit}, Output) ->
     map_proc(Map, Output, Emit);
-start_task_proc({{reduce, Reduce}, Emit}, Output) ->
+start_phase_proc({{reduce, Reduce}, Emit}, Output) ->
     reduce_proc(Reduce, Output, Emit).
 
 % map proc
 map_proc(Map,InputList, Emit) ->
-    task_proc(fun (KV) -> Map(KV, Emit) end, InputList).
+    phase_proc(fun (KV) -> Map(KV, Emit) end, InputList).
 
 % reduce proc
 reduce_proc(Reduce, InputList, Emit) ->
-    task_proc(fun (KV) -> Emit(Reduce(KV)) end, InputList).
+    phase_proc(fun (KV) -> Emit(Reduce(KV)) end, InputList).
 
-% task proc
-task_proc(_, []) -> ok;
-task_proc(ProcessAndEmit, [KV|Tail]) ->
+% phase proc
+phase_proc(_, []) -> ok;
+phase_proc(ProcessAndEmit, [KV|Tail]) ->
     ProcessAndEmit(KV),
-    task_proc(ProcessAndEmit, Tail).
+    phase_proc(ProcessAndEmit, Tail).
