@@ -113,16 +113,16 @@ dotproduct_acc(Acc, [A1|V1], [A2|V2]) ->
         true -> dotproduct_acc(Acc + X1 * X2, V1, V2)
     end.
 
-sqrtlength(V) -> dotproduct(V, V).
+squarelength(V) -> dotproduct(V, V).
 
 % gzc = exp(-(|Vp-Vx|/|Vp-Vn|/lam)^2) - exp(-(|Vn-Vx|/|Vp-Vn|/lam)^2)
 % |Vp-Vx|^2 = |Vp|^2 + |Vx|^2 - 2 * dot(Vp, Vx)
 % |Vn-Vx|^2 = |Vn|^2 + |Vx|^2 - 2 * dot(Vn, Vx)
 % |Vp-Vn|^2 = |Vp|^2 + |Vn|^2 - 2 * dot(Vp, Vn)
 gzc(Lambda, Vp, Vn, Vx) ->
-    SLVp = sqrtlength(Vp),
-    SLVn = sqrtlength(Vn),
-    SLVx = sqrtlength(Vx),
+    SLVp = squarelength(Vp),
+    SLVn = squarelength(Vn),
+    SLVx = squarelength(Vx),
     VpVx = dotproduct(Vp, Vx),
     VnVx = dotproduct(Vn, Vx),
     VpVn = dotproduct(Vp, Vn),
