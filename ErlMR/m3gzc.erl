@@ -1,9 +1,9 @@
 -module(m3gzc).
 -export([loadfile/1,
-         label_partition/1,
+         difftime/2,
          m3gzc/3,
-         m3gzcmrc/4,
-         m3gzcmrp/4]).
+         m3gzcmrc/3,
+         m3gzcmrp/3]).
 -import(mrlib,
         [mapreduce/3,
          info/2]).
@@ -17,6 +17,12 @@ loadfile(Filename) ->
     {ok, Data} = io:read(S, ''),
     file:close(S),
     Data.
+
+difftime({MeS1, S1, MiS1}, {MeS2, S2, MiS2}) ->
+    DMeS = MeS1 - MeS2,
+    DS = S1 - S2,
+    DMiS = MiS1 - MiS2,
+    (1000000 * DMeS + DS) * 1000 + DMiS / 1000.
 
 dotproduct(V1, V2) -> dotproduct_acc(0, V1, V2).
 
@@ -67,16 +73,10 @@ label_partition(Data) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-m3gzc_func(M3gzcFunc, Lambda, TrainData, TestData) ->
+m3gzc_func(M3gzcFunc, Params, TrainData, TestData) ->
     {PosVecs, NegVecs} = label_partition(TrainData),
     {TestLabels, TestVecs} = lists:unzip(TestData),
-    PredictLabels = M3gzcFunc(Lambda, PosVecs, NegVecs, TestVecs),
-    {TestLabels, PredictLabels}.
-
-m3gzc_func(M3gzcFunc, N, Lambda, TrainData, TestData) ->
-    {PosVecs, NegVecs} = label_partition(TrainData),
-    {TestLabels, TestVecs} = lists:unzip(TestData),
-    PredictLabels = M3gzcFunc(N, Lambda, PosVecs, NegVecs, TestVecs),
+    PredictLabels = M3gzcFunc(Params, PosVecs, NegVecs, TestVecs),
     {TestLabels, PredictLabels}.
 
 % M3-GZC %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -107,10 +107,10 @@ m3gzc_min(Lambda, PVec, NVecs, TVec) ->
 
 % M3-GZC-MRC %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-m3gzcmrc(N, Lambda, TrainData, TestData) ->
-    m3gzc_func(fun m3gzcmrc1/5, N, Lambda, TrainData, TestData).
+m3gzcmrc({N, Lambda}, TrainData, TestData) ->
+    m3gzc_func(fun m3gzcmrc1/4, {N, Lambda}, TrainData, TestData).
 
-m3gzcmrc1(N, Lambda, PosVecs, NegVecs, TestVecs) ->
+m3gzcmrc1({N, Lambda}, PosVecs, NegVecs, TestVecs) ->
     PosVecArr = array:from_list(PosVecs),
     NegVecArr = array:from_list(NegVecs),
     info("mkpair", []),
@@ -165,10 +165,10 @@ m3gzcmrc_max_reduce({Idx, ListOfScore}) ->
 
 % M3-GZC-MRP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-m3gzcmrp(N, Lambda, TrainData, TestData) ->
-    m3gzc_func(fun m3gzcmrp1/5, N, Lambda, TrainData, TestData).
+m3gzcmrp({N, Lambda}, TrainData, TestData) ->
+    m3gzc_func(fun m3gzcmrp1/4, {N, Lambda}, TrainData, TestData).
 
-m3gzcmrp1 (N, Lambda, PosVecs, NegVecs, TestVecs) ->
+m3gzcmrp1 ({N, Lambda}, PosVecs, NegVecs, TestVecs) ->
     InputList = extidx(PosVecs),
     info("start mapreduce", []),
     Output = mapreduce(
