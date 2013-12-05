@@ -1,5 +1,6 @@
 -module(m3gzc).
 -export([loadfile/1,
+         writefile/2,
          difftime/2,
          m3gzc/3,
          m3gzcmrc/3,
@@ -17,6 +18,11 @@ loadfile(Filename) ->
     {ok, Data} = io:read(S, ''),
     file:close(S),
     Data.
+
+writefile(Filename, Data) ->
+    {ok, S} = file:open(Filename, write),
+    io:format(S, "~p.~n", [Data]),
+    file:close(S).
 
 difftime({MeS1, S1, MiS1}, {MeS2, S2, MiS2}) ->
     DMeS = MeS1 - MeS2,

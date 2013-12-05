@@ -1,5 +1,6 @@
 -module(exper).
 -export([start/2,
+         exper_threads/2,
          exper_m3gzc/3,
          exper_m3gzcmrc/3,
          exper_m3gzcmrp/3]).
@@ -7,6 +8,7 @@
         [info/2]).
 -import(m3gzc,
         [loadfile/1,
+         writefile/2,
          difftime/2]).
 
 exper_func(Func, Params, TrainData, TestData, Step) ->
@@ -38,9 +40,7 @@ exper_one(Func, Params, Step, OutputFn) ->
     TestData = loadfile(TestFn),
     Output = exper_func(Func, Params,
                         TrainData, TestData, Step),
-    {ok, S} = file:open(OutputFn, write),
-    io:format(S, "~p.~n", [Output]),
-    file:close(S).
+    writefile(OutputFn, Output).
 
 exper_m3gzc(Lambda, Step, OutputFn) ->
     exper_one(fun m3gzc:m3gzc/3, Lambda, Step, OutputFn).
@@ -57,3 +57,31 @@ start(N, Step) ->
     exper_m3gzc(Lambda, Step, "output.m3gzc.erldat"),
     exper_m3gzcmrc(Params, Step, "output.m3gzcmrc.erldat"),
     exper_m3gzcmrp(Params, Step, "output.m3gzcmrp.erldat").
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+exper_th_one(Func, CN, DN, N, Lambda, TrainData, TestData)
+  when CN < N ->
+    NextN = DN + CN,
+    StartTime = now(),
+    Func({NextN, Lambda}, TrainData, TestData),
+    EndTime = now(),
+    UsedMS = difftime(EndTime, StartTime),
+    Rest = exper_th_one(Func, NextN, DN, N, Lambda, TrainData, TestData),
+    [{NextN, UsedMS}|Rest];
+exper_th_one(_, _, _, _, _, _, _) -> [].
+
+
+exper_threads(DN, N) ->
+    TrainFn = "testdata/traindata.erldat",
+    TestFn = "testdata/testdata.erldat",
+    TrainData = loadfile(TrainFn),
+    TestData = loadfile(TestFn),
+    Lambda = 0.5,
+    MRCT = exper_th_one(fun m3gzc:m3gzcmrc/3, 0, DN, N,
+                        Lambda, TrainData, TestData),
+    MRPT = exper_th_one(fun m3gzc:m3gzcmrp/3, 0, DN, N,
+                        Lambda, TrainData, TestData),
+    writefile("mrc_threads.erldat", MRCT),
+    writefile("mrp_threads.erldat", MRPT),
+    ok.
