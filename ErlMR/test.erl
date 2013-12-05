@@ -70,13 +70,9 @@ wc(N) ->
 
 m3_loadfile(Filename) ->
     {ok, S} = file:open(Filename, read),
-    m3_loadfile_acc([], S).
-
-m3_loadfile_acc(Acc, S) ->
-    case io:read(S, '') of
-        {ok, Datum} -> m3_loadfile_acc([Datum|Acc], S);
-        eof -> file:close(S), lists:reverse(Acc)
-    end.
+    {ok, Data} = io:read(S, ''),
+    file:close(S),
+    Data.
 
 m3_mk_pair(A1, A2) ->
     m3_mk_pair_acc([], 0, 0, A1, A2, array:size(A1), array:size(A2)).

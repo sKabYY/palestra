@@ -1,4 +1,4 @@
-SRC=mrlib.erl test.erl
+SRC=mrlib.erl test.erl m3gzc.erl
 
 all:
 	erlc ${SRC}
