@@ -45,11 +45,9 @@ exper_m3gzcmrc({N, Lambda}, Step, OutputFn) ->
 exper_m3gzcmrp({N, Lambda}, Step, OutputFn) ->
     exper_one(fun m3gzc:m3gzcmrp/3, {N, Lambda}, Step, OutputFn).
 
-start() ->
+start(N, Step) ->
     Lambda = 0.5,
-    N = 4,
     Params = {N, Lambda},
-    Step = 50,
     exper_m3gzc(Lambda, Step, "output.m3gzc.erldat"),
     exper_m3gzcmrc(Params, Step, "output.m3gzcmrc.erldat"),
     exper_m3gzcmrp(Params, Step, "output.m3gzcmrp.erldat").
