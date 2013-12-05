@@ -3,12 +3,16 @@
          exper_m3gzc/3,
          exper_m3gzcmrc/3,
          exper_m3gzcmrp/3]).
+-import(mrlib,
+        [info/2]).
 -import(m3gzc,
         [loadfile/1,
          difftime/2]).
 
 exper_func(Func, Params, TrainData, TestData, Step) ->
     Len = length(TrainData),
+    info("exper: ~p", [Func]),
+    info("total #train: ~p", [Len]),
     exper_func_acc([], Func, Params, TrainData, TestData, Step, 0, Len).
 
 exper_func_acc(Acc, Func, Params,
@@ -16,9 +20,11 @@ exper_func_acc(Acc, Func, Params,
                Step, Start, Len) when Start < Len ->
     SubLen = Start + Step,
     SubTrainData = lists:sublist(TrainData, SubLen),
+    info("go: #train=~p, #test=~p", [length(SubTrainData), length(TestData)]),
     StartTime = now(),
     L = Func(Params, SubTrainData, TestData),
     EndTime = now(),
+    info("done!", []),
     UsedMS = difftime(EndTime, StartTime),
     exper_func_acc([{UsedMS, L}|Acc], Func, Params,
                    TrainData, TestData,
