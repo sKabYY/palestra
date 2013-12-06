@@ -2,9 +2,14 @@
 -export([loadfile/1,
          savefile/2,
          difftime/2,
+         test_pf/0,
+         m3gzc_prune_factor/2,
          m3gzc/3,
          m3gzcmrc/3,
-         m3gzcmrp/3]).
+         m3gzcmrp/3,
+         m3gzcmp_prune/2,
+         m3gzcmpmr_prune/2,
+         m3gzcmpmr_predict/3]).
 -import(mrlib,
         [mapreduce/3,
          info/2]).
@@ -30,37 +35,67 @@ difftime({MeS1, S1, MiS1}, {MeS2, S2, MiS2}) ->
     DMiS = MiS1 - MiS2,
     (1000000 * DMeS + DS) * 1000 + DMiS / 1000.
 
-dotproduct(V1, V2) -> dotproduct_acc(0, V1, V2).
+%dotproduct(V1, V2) -> dotproduct_acc(0, V1, V2).
+%
+%dotproduct_acc(Acc, [], _) -> Acc;
+%dotproduct_acc(Acc, _, []) -> Acc;
+%dotproduct_acc(Acc, [A1|V1], [A2|V2]) ->
+%    {D1, X1} = A1,
+%    {D2, X2} = A2,
+%    if
+%        D1 > D2 -> dotproduct_acc(Acc, [A1|V1], V2);
+%        D2 < D1 -> dotproduct_acc(Acc, V1, [A2|V2]);
+%        true -> dotproduct_acc(Acc + X1 * X2, V1, V2)
+%    end.
 
-dotproduct_acc(Acc, [], _) -> Acc;
-dotproduct_acc(Acc, _, []) -> Acc;
-dotproduct_acc(Acc, [A1|V1], [A2|V2]) ->
+squarelength(V) -> squarelength_acc(0, V).
+
+squarelength_acc(Acc, []) -> Acc;
+squarelength_acc(Acc, [{_, X}|V]) ->
+    squarelength_acc(Acc + X * X, V).
+
+diffv(V1, V2) -> diffv_acc([], V1, V2).
+
+diffv_acc(Acc, [], []) -> lists:reverse(Acc);
+diffv_acc(Acc, V1, []) -> lists:revers(V1) ++ Acc;
+diffv_acc(Acc, [], V2) ->
+    lists:revers(lists:map(fun ({D, X}) -> {D, -X} end, V2)) ++ Acc;
+diffv_acc(Acc, [A1|V1], [A2|V2]) ->
     {D1, X1} = A1,
     {D2, X2} = A2,
     if
-        D1 > D2 -> dotproduct_acc(Acc, [A1|V1], V2);
-        D2 < D1 -> dotproduct_acc(Acc, V1, [A2|V2]);
-        true -> dotproduct_acc(Acc + X1 * X2, V1, V2)
+        D1 > D2 -> diffv_acc([{D2, -X2}|Acc], [A1|V1], V2);
+        D2 < D1 -> diffv_acc([A1|Acc], V1, [A2|V2]);
+        true -> diffv_acc([{D1, X1 - X2}|Acc], V1, V2)
     end.
 
-squarelength(V) -> dotproduct(V, V).
+
+squaredistance(V1, V2) ->
+    squarelength(diffv(V1, V2)).
 
 % gzc = exp(-(|Vp-Vx|/|Vp-Vn|/lam)^2) - exp(-(|Vn-Vx|/|Vp-Vn|/lam)^2)
 % |Vp-Vx|^2 = |Vp|^2 + |Vx|^2 - 2 * dot(Vp, Vx)
 % |Vn-Vx|^2 = |Vn|^2 + |Vx|^2 - 2 * dot(Vn, Vx)
 % |Vp-Vn|^2 = |Vp|^2 + |Vn|^2 - 2 * dot(Vp, Vn)
+%gzc(Lambda, Vp, Vn, Vx) ->
+%    SLVp = squarelength(Vp),
+%    SLVn = squarelength(Vn),
+%    SLVx = squarelength(Vx),
+%    VpVx = dotproduct(Vp, Vx),
+%    VnVx = dotproduct(Vn, Vx),
+%    VpVn = dotproduct(Vp, Vn),
+%    VpVx2 = SLVp + SLVx - 2 * VpVx,
+%    VnVx2 = SLVn + SLVx - 2 * VnVx,
+%    VpVn2 = SLVp + SLVn - 2 * VpVn,
+%    Sigma = Lambda * Lambda * VpVn2,
+%    math:exp(-VpVx2 / Sigma) - math:exp(-VnVx2 / Sigma).
+
 gzc(Lambda, Vp, Vn, Vx) ->
-    SLVp = squarelength(Vp),
-    SLVn = squarelength(Vn),
-    SLVx = squarelength(Vx),
-    VpVx = dotproduct(Vp, Vx),
-    VnVx = dotproduct(Vn, Vx),
-    VpVn = dotproduct(Vp, Vn),
-    VpVx2 = SLVp + SLVx - 2 * VpVx,
-    VnVx2 = SLVn + SLVx - 2 * VnVx,
-    VpVn2 = SLVp + SLVn - 2 * VpVn,
-    Sigma = Lambda * Lambda * VpVn2,
-    math:exp(-VpVx2 / Sigma) - math:exp(-VnVx2 / Sigma).
+    VpVx2 = squaredistance(Vp, Vx),
+    VnVx2 = squaredistance(Vn, Vx),
+    VpVn2 = squaredistance(Vp, Vn),
+    Sigma2 = Lambda * Lambda * VpVn2,
+    math:exp(-VpVx2 / Sigma2) - math:exp(-VnVx2 / Sigma2).
 
 unzip_snd(L) ->
     lists:map(fun ({_, V}) -> V end, L).
@@ -202,3 +237,150 @@ m3gzcmrp_mk_map(Lambda, NegVecs, TestVecs) ->
     end.
 
 m3gzcmrp_reduce(KV) -> m3gzcmrc_max_reduce(KV).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% Func(x) = 0
+root(Func, Eps) ->
+    B = find_first_less(Func, 1, 1 / Eps),
+    root_range(Func, Eps, 0, B).
+
+find_first_less(Func, B, Max) ->
+    Y = Func(B),
+    if
+        Y > 0 ->
+            find_first_less(Func, 2 * B, Max);
+        B > Max -> throw(overflow);
+        true -> B
+    end.
+
+root_range(Func, Eps, A, B) ->
+    C = (A + B) / 2,
+    if
+        B - A >= Eps ->
+            Y = Func(C),
+            if
+                Y > 0 -> root_range(Func, Eps, C, B);
+                Y < 0-> root_range(Func, Eps, A, C);
+                true -> C
+            end;
+        true -> C
+    end.
+
+exp_ms(X) -> math:exp(-X*X).
+
+mk_k1equation(Lambda, Threshold) ->
+    fun (K1) ->
+            exp_ms(K1 / Lambda) - exp_ms((1 + K1) / Lambda) - Threshold
+    end.
+
+mk_k2equation(Lambda, Threshold) ->
+    fun (K2) ->
+            exp_ms(K2 / Lambda) - exp_ms((1 - K2) / Lambda) - Threshold
+    end.
+
+m3gzc_prune_factor(Lambda, Threshold) ->
+    Eps = 0.000001,
+    K1 = root(mk_k1equation(Lambda, Threshold), Eps),
+    K2 = root(mk_k2equation(Lambda, Threshold), Eps),
+    R = K1 / K2,
+    R * R.
+
+test_pf() ->
+    N = 100,
+    Xs = lists:map(
+           fun (X) -> X / N end,
+           lists:seq(0, N)),
+    Ys = lists:map(
+           fun (X) -> m3gzc_prune_factor(0.5, X) end,
+           Xs),
+    savefile("test_pf.erldat", lists:zip(Xs, Ys)).
+
+% M3-GZC-MP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+m3gzcmp_prune({Lambda, Threshold}, TrainData) -> todo.
+
+% M3-GZC-MP-MR %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+m3gzcmpmr_prune({N, Lambda, Threshold}, TrainData) ->
+    {PosVecs, NegVecs} = label_partition(TrainData),
+    KK = m3gzc_prune_factor(Lambda, Threshold),
+    NegPLs = m3gzcmpmr_pls(N, KK, PosVecs, NegVecs),
+    PosPLs = m3gzcmpmr_pls(N, KK, NegVecs, PosVecs),
+    Output = mapreduce(
+               N,
+               extidx(lists:zip(PosVecs, PosPLs)),
+               [{reduce, m3gzcmpmr_prune_mk_reduce(KK, NegVecs, NegPLs)}]),
+    lists:keysort(1, Output).
+
+m3gzcmpmr_prune_mk_reduce(KK, NegVecs, NegPLs) ->
+    fun ({Idx, {PVec, PPL}}) ->
+            NIdces = m3gzcmpmr_prune_reduce_acc([], 1, PVec, PPL, KK, NegVecs, NegPLs),
+            {Idx, NIdces}
+    end.
+
+m3gzcmpmr_prune_reduce_acc(Acc, _, _, _, _, [], []) -> lists:reverse(Acc);
+m3gzcmpmr_prune_reduce_acc(Acc, NIdx, PVec, PPL, KK, [NVec|NVecs], [NPL|NPLs]) ->
+    SD = squaredistance(PVec, NVec),
+    if
+        SD >= PPL andalso SD >= NPL ->
+            m3gzcmpmr_prune_reduce_acc(Acc, NIdx + 1, PVec, PPL, KK, NVecs, NPLs);
+        true ->
+            m3gzcmpmr_prune_reduce_acc([NIdx|Acc], NIdx + 1, PVec, PPL, KK, NVecs, NPLs)
+    end.
+
+m3gzcmpmr_pls(N, KK, IterVecs, TargetVecs) ->
+    Output = mapreduce(
+               N,
+               extidx(TargetVecs),
+               [{reduce, m3gzcmpmr_pls_mk_reduce(IterVecs)}]),
+    lists:map(
+      fun (X) -> KK * X end,
+      unzip_snd(lists:keysort(1, Output))).
+
+m3gzcmpmr_pls_mk_reduce(IterVecs) ->
+    fun ({Idx, Vec}) ->
+            PL = lists:min(lists:map(
+                             fun (IVec) ->
+                                     squaredistance(IVec, Vec)
+                             end,
+                             IterVecs)),
+            {Idx, PL}
+    end.
+
+m3gzcmpmr_predict({N, Lambda, Modulars}, TrainData, TestData) ->
+    m3gzc_func(fun m3gzcmpmr_predict1/4, {N, Lambda, Modulars}, TrainData, TestData).
+
+m3gzcmpmr_predict1({N, Lambda, Modulars}, PosVecs, NegVecs, TestVecs) ->
+    InputList = lists:map(
+                  fun ({{PIdx, Ns}, PVec}) -> {PIdx, {PVec, Ns}} end,
+                  lists:zip(Modulars, PosVecs)),
+    NegVecsArr = array:from_list(NegVecs),
+    Output = mapreduce(
+               N,
+               InputList,
+               [{map, m3gzcmpmr_predict_mk_map(Lambda, NegVecsArr, extidx(TestVecs))},
+                {reduce, fun m3gzcmpmr_predict_reduce/1}]),
+    unzip_snd(lists:keysort(1, Output)).
+
+m3gzcmpmr_predict_mk_map(Lambda, NVA, TestVecs) ->
+    fun ({_, {PVec, Ns}}, Emit) ->
+            lists:foreach(
+              fun ({Idx, TVec}) ->
+                      Score = mp_min(Lambda, TVec, PVec, Ns, NVA),
+                      Emit({Idx, Score})
+              end,
+              TestVecs)
+    end.
+
+mp_min(Lambda, TVec, PVec, Ns, NVA) ->
+    ScoreList = lists:map(
+                  fun (I) ->
+                          NVec = array:get(I - 1, NVA),
+                          gzc(Lambda, PVec, NVec, TVec)
+                  end,
+                  Ns),
+    lists:min(ScoreList).
+
+m3gzcmpmr_predict_reduce({Idx, ScoreList}) ->
+    {Idx, lists:max(ScoreList)}.

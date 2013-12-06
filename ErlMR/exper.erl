@@ -1,5 +1,5 @@
 -module(exper).
--export([start/2,
+-export([exper_normal/2,
          exper_threads/2,
          exper_m3gzc/3,
          exper_m3gzcmrc/3,
@@ -51,7 +51,7 @@ exper_m3gzcmrc({N, Lambda}, Step, OutputFn) ->
 exper_m3gzcmrp({N, Lambda}, Step, OutputFn) ->
     exper_one(fun m3gzc:m3gzcmrp/3, {N, Lambda}, Step, OutputFn).
 
-start(N, Step) ->
+exper_normal(N, Step) ->
     Lambda = 0.5,
     Params = {N, Lambda},
     exper_m3gzc(Lambda, Step, "output.m3gzc.erldat"),
@@ -85,3 +85,5 @@ exper_threads(DN, N) ->
     savefile("mrc_threads.erldat", MRCT),
     savefile("mrp_threads.erldat", MRPT),
     ok.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
