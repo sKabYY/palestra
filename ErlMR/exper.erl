@@ -8,7 +8,7 @@
         [info/2]).
 -import(m3gzc,
         [loadfile/1,
-         writefile/2,
+         savefile/2,
          difftime/2]).
 
 exper_func(Func, Params, TrainData, TestData, Step) ->
@@ -40,7 +40,7 @@ exper_one(Func, Params, Step, OutputFn) ->
     TestData = loadfile(TestFn),
     Output = exper_func(Func, Params,
                         TrainData, TestData, Step),
-    writefile(OutputFn, Output).
+    savefile(OutputFn, Output).
 
 exper_m3gzc(Lambda, Step, OutputFn) ->
     exper_one(fun m3gzc:m3gzc/3, Lambda, Step, OutputFn).
@@ -82,6 +82,6 @@ exper_threads(DN, N) ->
                         Lambda, TrainData, TestData),
     MRPT = exper_th_one(fun m3gzc:m3gzcmrp/3, 0, DN, N,
                         Lambda, TrainData, TestData),
-    writefile("mrc_threads.erldat", MRCT),
-    writefile("mrp_threads.erldat", MRPT),
+    savefile("mrc_threads.erldat", MRCT),
+    savefile("mrp_threads.erldat", MRPT),
     ok.
