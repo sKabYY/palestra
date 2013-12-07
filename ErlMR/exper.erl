@@ -3,7 +3,10 @@
          exper_threads/2,
          exper_m3gzc/3,
          exper_m3gzcmrc/3,
-         exper_m3gzcmrp/3]).
+         exper_m3gzcmrp/3,
+         %%%
+         exper_m3gzcmp/3,
+         exper_m3gzcmpmr/3]).
 -import(mrlib,
         [info/2]).
 -import(m3gzc,
@@ -87,3 +90,63 @@ exper_threads(DN, N) ->
     ok.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+exper_prune_func(PruneFunc, PruneParams,
+                 PredictFunc, PredictParams,
+                 TrainData, TestData, Step) ->
+    Len = length(TrainData),
+    info("exper: prune: ~p, predict: ~p", [PruneFunc, PredictFunc]),
+    info("total #train: ~p", [Len]),
+    exper_prune_func_acc([],
+                         PruneFunc, PruneParams,
+                         PredictFunc, PredictParams,
+                         TrainData, TestData, Step, 0, Len).
+
+exper_prune_func_acc(Acc,
+                     PruneFunc, PruneParams,
+                     PredictFunc, PredictParams,
+                     TrainData, TestData,
+                     Step, Start, Len) when Start < Len ->
+    SubLen = Start + Step,
+    SubTrainData = lists:sublist(TrainData, SubLen),
+    info("go: #train=~p, #test=~p", [length(SubTrainData), length(TestData)]),
+    StartTimePrune = now(),
+    M = PruneFunc(PruneParams, SubTrainData),
+    EndTimePrune = now(),
+    PruneUsedMS = difftime(EndTimePrune, StartTimePrune),
+    StartTimePredict = now(),
+    L = PredictFunc(PredictParams, M, SubTrainData, TestData),
+    EndTimePredict = now(),
+    PredictUsedMS = difftime(EndTimePredict, StartTimePredict),
+    exper_prune_func_acc([{PruneUsedMS, PredictUsedMS, M, L}|Acc],
+                         PruneFunc, PruneParams,
+                         PredictFunc, PredictParams,
+                         TrainData, TestData,
+                         Step, SubLen, Len);
+exper_prune_func_acc(Acc, _, _, _, _, _, _ ,_ ,_, _) ->
+    lists:reverse(Acc).
+
+exper_prune_one(PruneFunc, PruneParams,
+                PredictFunc, PredictParams,
+                Step, OutputFn) ->
+    TrainFn = "testdata/traindata.erldat",
+    TestFn = "testdata/testdata.erldat",
+    TrainData = loadfile(TrainFn),
+    TestData = loadfile(TestFn),
+    Output = exper_prune_func(PruneFunc, PruneParams,
+                              PredictFunc, PredictParams,
+                              TrainData, TestData, Step),
+    savefile(OutputFn, Output).
+
+
+exper_m3gzcmp({Lambda, Threshold}, Step, OutputFn) ->
+    exper_prune_one(
+      fun m3gzc:m3gzcmp_prune/2, {Lambda, Threshold},
+      fun m3gzc:m3gzcmp_predict/4, Lambda,
+      Step, OutputFn).
+
+exper_m3gzcmpmr({N, Lambda, Threshold}, Step, OutputFn) ->
+    exper_prune_one(
+      fun m3gzc:m3gzcmpmr_prune/2, {N, Lambda, Threshold},
+      fun m3gzc:m3gzcmpmr_predict/4, {N, Lambda},
+      Step, OutputFn).

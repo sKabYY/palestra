@@ -2,14 +2,17 @@
 -export([loadfile/1,
          savefile/2,
          difftime/2,
+         traindata_info/1,
          test_pf/0,
          m3gzc_prune_factor/2,
          m3gzc/3,
          m3gzcmrc/3,
          m3gzcmrp/3,
+         count_mp_modulars/1,
          m3gzcmp_prune/2,
+         m3gzcmp_predict/4,
          m3gzcmpmr_prune/2,
-         m3gzcmpmr_predict/3]).
+         m3gzcmpmr_predict/4]).
 -import(mrlib,
         [mapreduce/3,
          info/2]).
@@ -97,6 +100,9 @@ gzc(Lambda, Vp, Vn, Vx) ->
     Sigma2 = Lambda * Lambda * VpVn2,
     math:exp(-VpVx2 / Sigma2) - math:exp(-VnVx2 / Sigma2).
 
+unzip_fst(L) ->
+    lists:map(fun ({I, _}) -> I end, L).
+
 unzip_snd(L) ->
     lists:map(fun ({_, V}) -> V end, L).
 
@@ -111,6 +117,15 @@ label_partition(Data) ->
     PosVecs = unzip_snd(PosData),
     NegVecs = unzip_snd(NegData),
     {PosVecs, NegVecs}.
+
+traindata_info(TrainData) ->
+    {PosData, NegData} =
+        lists:partition(
+          fun ({Label, _}) -> Label > 0 end,
+          TrainData),
+    Np = length(PosData),
+    Nn = length(NegData),
+    {Np, Nn, Np * Nn}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -298,13 +313,106 @@ test_pf() ->
 
 % M3-GZC-MP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-m3gzcmp_prune({Lambda, Threshold}, TrainData) -> todo.
+count_mp_modulars(Modulars) ->
+    lists:sum(lists:map(
+                fun ({_, List}) -> length(List) end,
+                Modulars)).
+
+m3gzc_prune_func(Func, Params, Lambda, Threshold, TrainData) ->
+    {PosVecs, NegVecs} = label_partition(TrainData),
+    KK = m3gzc_prune_factor(Lambda, Threshold),
+    Func(Params, KK, PosVecs, NegVecs).
+
+% M3-GZC-MP prune
+
+m3gzcmp_prune({Lambda, Threshold}, TrainData) ->
+    m3gzc_prune_func(fun m3gzcmp_prune1/4, {},
+                     Lambda, Threshold, TrainData).
+
+m3gzcmp_prune1({}, KK, PosVecs, NegVecs) ->
+    NegPLs = m3gzcmp_pls(KK, PosVecs, NegVecs),
+    PosPLs = m3gzcmp_pls(KK, NegVecs, PosVecs),
+    Ms = lists:map(
+           fun ({PVec, PPL}) ->
+                   m3gzcmp_modulars_vec(PVec, PPL, NegVecs, NegPLs)
+           end,
+           lists:zip(PosVecs, PosPLs)),
+    extidx(Ms).
+
+m3gzcmp_pls(KK, IterVecs, TargetVecs) ->
+    lists:map(
+      fun (V) ->
+              lists:min(lists:map(
+                          fun (IV) ->
+                                  squaredistance(V, IV)
+                          end,
+                          IterVecs)) * KK
+      end,
+      TargetVecs).
+
+m3gzcmp_modulars_vec(PVec, PPL, NegVecs, NegPLs) ->
+    unzip_fst(
+      lists:filter(
+        fun ({_, {NVec, NPL}}) ->
+                L = squaredistance(PVec, NVec),
+                L < PPL orelse L < NPL
+        end,
+        extidx(lists:zip(NegVecs, NegPLs)))).
+
+% M3-GZC-MP predict
+
+m3gzcmp_predict(Lambda, Modulars, TrainData, TestData) ->
+    m3gzc_func(fun m3gzcmp_predict1/4, {Lambda, Modulars}, TrainData, TestData).
+
+m3gzcmp_predict1({Lambda, Modulars}, PosVecs, NegVecs, TestVecs) ->
+    lists:map(
+      fun (TVec) ->
+              m3gzcmp_predict1_one({Lambda, Modulars}, PosVecs, NegVecs, TVec)
+      end,
+      TestVecs).
+
+m3gzcmp_predict1_one({Lambda, Modulars}, PosVecs, NegVecs, TVec) ->
+    NegLen = length(NegVecs),
+    NegVecsArr = array:from_list(NegVecs),
+    NegBuf = array:new(NegLen, {default, inf}),
+    m3gzcmp_predict1_one_iter(0, NegBuf, {Lambda, Modulars}, PosVecs, NegVecsArr, TVec).
+
+m3gzcmp_predict1_one_iter(PScore, NegBuf, {_, []}, [], _, _) ->
+    PScore - lists:max(array:to_list(NegBuf));
+m3gzcmp_predict1_one_iter(PScore, NegBuf,
+                          {Lambda, [{_, M}|Modulars]}, [PVec|PosVecs], NegVecsArr, TVec) ->
+    NegSs = m3gzcmp_score_line(Lambda, M, PVec, NegVecsArr, TVec),
+    PS = lists:min(NegSs),
+    NewNegBuf = m3gzcmp_update_negbuf(M, NegSs, NegBuf),
+    m3gzcmp_predict1_one_iter(
+      max(PScore, PS), NewNegBuf,
+      {Lambda, Modulars}, PosVecs, NegVecsArr, TVec).
+
+m3gzcmp_score_line(Lambda, M, PVec, NegVecsArr, TVec) ->
+    lists:map(
+      fun (NIdx) ->
+              NVec = array:get(NIdx - 1, NegVecsArr),
+              gzc(Lambda, PVec, NVec, TVec)
+      end,
+      M).
+
+m3gzcmp_update_negbuf([], [], NegBuf) -> NegBuf;
+m3gzcmp_update_negbuf([Mod|M], [NS|NegSs], NegBuf) ->
+    NSold = array:get(Mod - 1, NegBuf),
+    NewNegBuf = if
+                    -NS < NSold -> array:set(Mod - 1, -NS, NegBuf);
+                    true -> NegBuf
+                end,
+    m3gzcmp_update_negbuf(M, NegSs, NewNegBuf).
 
 % M3-GZC-MP-MR %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+% M3-GZC-MP-MR prune
+
 m3gzcmpmr_prune({N, Lambda, Threshold}, TrainData) ->
-    {PosVecs, NegVecs} = label_partition(TrainData),
-    KK = m3gzc_prune_factor(Lambda, Threshold),
+    m3gzc_prune_func(fun m3gzcmpmr_prune1/4, N, Lambda, Threshold, TrainData).
+
+m3gzcmpmr_prune1(N, KK, PosVecs, NegVecs) ->
     NegPLs = m3gzcmpmr_pls(N, KK, PosVecs, NegVecs),
     PosPLs = m3gzcmpmr_pls(N, KK, NegVecs, PosVecs),
     Output = mapreduce(
@@ -333,22 +441,22 @@ m3gzcmpmr_pls(N, KK, IterVecs, TargetVecs) ->
     Output = mapreduce(
                N,
                extidx(TargetVecs),
-               [{reduce, m3gzcmpmr_pls_mk_reduce(IterVecs)}]),
-    lists:map(
-      fun (X) -> KK * X end,
-      unzip_snd(lists:keysort(1, Output))).
+               [{reduce, m3gzcmpmr_pls_mk_reduce(KK, IterVecs)}]),
+    unzip_snd(lists:keysort(1, Output)).
 
-m3gzcmpmr_pls_mk_reduce(IterVecs) ->
+m3gzcmpmr_pls_mk_reduce(KK, IterVecs) ->
     fun ({Idx, Vec}) ->
-            PL = lists:min(lists:map(
+            MinL = lists:min(lists:map(
                              fun (IVec) ->
                                      squaredistance(IVec, Vec)
                              end,
                              IterVecs)),
-            {Idx, PL}
+            {Idx, KK * MinL}
     end.
 
-m3gzcmpmr_predict({N, Lambda, Modulars}, TrainData, TestData) ->
+% M3-GZC-MP-MR predict
+
+m3gzcmpmr_predict({N, Lambda}, Modulars, TrainData, TestData) ->
     m3gzc_func(fun m3gzcmpmr_predict1/4, {N, Lambda, Modulars}, TrainData, TestData).
 
 m3gzcmpmr_predict1({N, Lambda, Modulars}, PosVecs, NegVecs, TestVecs) ->
@@ -360,27 +468,41 @@ m3gzcmpmr_predict1({N, Lambda, Modulars}, PosVecs, NegVecs, TestVecs) ->
                N,
                InputList,
                [{map, m3gzcmpmr_predict_mk_map(Lambda, NegVecsArr, extidx(TestVecs))},
-                {reduce, fun m3gzcmpmr_predict_reduce/1}]),
+                {reduce, fun m3gzcmpmr_predict_reduce/1},
+                {reduce, fun m3gzcmpmr_predict_reduce_min/1},
+                {reduce, fun m3gzcmpmr_predict_reduce_merge/1}]),
     unzip_snd(lists:keysort(1, Output)).
 
 m3gzcmpmr_predict_mk_map(Lambda, NVA, TestVecs) ->
     fun ({_, {PVec, Ns}}, Emit) ->
             lists:foreach(
               fun ({Idx, TVec}) ->
-                      Score = mp_min(Lambda, TVec, PVec, Ns, NVA),
-                      Emit({Idx, Score})
+                      ScoreList = mp_list(Lambda, TVec, PVec, Ns, NVA),
+                      lists:foreach(
+                        fun ({NIdx, Score}) -> Emit({{neg, Idx, NIdx}, Score}) end,
+                        ScoreList),
+                      Emit({{pos, Idx}, lists:min(unzip_snd(ScoreList))})
               end,
               TestVecs)
     end.
 
-mp_min(Lambda, TVec, PVec, Ns, NVA) ->
-    ScoreList = lists:map(
-                  fun (I) ->
-                          NVec = array:get(I - 1, NVA),
-                          gzc(Lambda, PVec, NVec, TVec)
-                  end,
-                  Ns),
-    lists:min(ScoreList).
+mp_list(Lambda, TVec, PVec, Ns, NVA) ->
+    lists:map(
+      fun (I) ->
+              NVec = array:get(I - 1, NVA),
+              {I, gzc(Lambda, PVec, NVec, TVec)}
+      end,
+      Ns).
 
-m3gzcmpmr_predict_reduce({Idx, ScoreList}) ->
-    {Idx, lists:max(ScoreList)}.
+m3gzcmpmr_predict_reduce({{pos, Idx}, ScoreList}) ->
+    {Idx, lists:max(ScoreList)};
+m3gzcmpmr_predict_reduce({{neg, Idx, _}, ScoreList}) ->
+    {{neg, Idx}, lists:max(ScoreList)}.
+
+m3gzcmpmr_predict_reduce_min({Idx, [Score]}) ->
+    {Idx, Score};
+m3gzcmpmr_predict_reduce_min({{neg, Idx}, ScoreList}) ->
+    {Idx, lists:min(ScoreList)}.
+
+m3gzcmpmr_predict_reduce_merge({Idx, [S1, S2]}) ->
+    {Idx, S1 + S2}.
