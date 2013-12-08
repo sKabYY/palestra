@@ -8,7 +8,7 @@
          m3gzc/3,
          m3gzcmrc/3,
          m3gzcmrp/3,
-         count_mp_modulars/1,
+         count_mp_modules/1,
          m3gzcmp_prune/2,
          m3gzcmp_predict/4,
          m3gzcmpmr_prune/2,
@@ -313,10 +313,10 @@ test_pf() ->
 
 % M3-GZC-MP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-count_mp_modulars(Modulars) ->
+count_mp_modules(Modules) ->
     lists:sum(lists:map(
                 fun ({_, List}) -> length(List) end,
-                Modulars)).
+                Modules)).
 
 m3gzc_prune_func(Func, Params, Lambda, Threshold, TrainData) ->
     {PosVecs, NegVecs} = label_partition(TrainData),
@@ -334,7 +334,7 @@ m3gzcmp_prune1({}, KK, PosVecs, NegVecs) ->
     PosPLs = m3gzcmp_pls(KK, NegVecs, PosVecs),
     Ms = lists:map(
            fun ({PVec, PPL}) ->
-                   m3gzcmp_modulars_vec(PVec, PPL, NegVecs, NegPLs)
+                   m3gzcmp_modules_vec(PVec, PPL, NegVecs, NegPLs)
            end,
            lists:zip(PosVecs, PosPLs)),
     extidx(Ms).
@@ -350,7 +350,7 @@ m3gzcmp_pls(KK, IterVecs, TargetVecs) ->
       end,
       TargetVecs).
 
-m3gzcmp_modulars_vec(PVec, PPL, NegVecs, NegPLs) ->
+m3gzcmp_modules_vec(PVec, PPL, NegVecs, NegPLs) ->
     unzip_fst(
       lists:filter(
         fun ({_, {NVec, NPL}}) ->
@@ -361,32 +361,32 @@ m3gzcmp_modulars_vec(PVec, PPL, NegVecs, NegPLs) ->
 
 % M3-GZC-MP predict
 
-m3gzcmp_predict(Lambda, Modulars, TrainData, TestData) ->
-    m3gzc_func(fun m3gzcmp_predict1/4, {Lambda, Modulars}, TrainData, TestData).
+m3gzcmp_predict(Lambda, Modules, TrainData, TestData) ->
+    m3gzc_func(fun m3gzcmp_predict1/4, {Lambda, Modules}, TrainData, TestData).
 
-m3gzcmp_predict1({Lambda, Modulars}, PosVecs, NegVecs, TestVecs) ->
+m3gzcmp_predict1({Lambda, Modules}, PosVecs, NegVecs, TestVecs) ->
     lists:map(
       fun (TVec) ->
-              m3gzcmp_predict1_one({Lambda, Modulars}, PosVecs, NegVecs, TVec)
+              m3gzcmp_predict1_one({Lambda, Modules}, PosVecs, NegVecs, TVec)
       end,
       TestVecs).
 
-m3gzcmp_predict1_one({Lambda, Modulars}, PosVecs, NegVecs, TVec) ->
+m3gzcmp_predict1_one({Lambda, Modules}, PosVecs, NegVecs, TVec) ->
     NegLen = length(NegVecs),
     NegVecsArr = array:from_list(NegVecs),
     NegBuf = array:new(NegLen, {default, inf}),
-    m3gzcmp_predict1_one_iter(0, NegBuf, {Lambda, Modulars}, PosVecs, NegVecsArr, TVec).
+    m3gzcmp_predict1_one_iter(0, NegBuf, {Lambda, Modules}, PosVecs, NegVecsArr, TVec).
 
 m3gzcmp_predict1_one_iter(PScore, NegBuf, {_, []}, [], _, _) ->
     PScore - lists:max(array:to_list(NegBuf));
 m3gzcmp_predict1_one_iter(PScore, NegBuf,
-                          {Lambda, [{_, M}|Modulars]}, [PVec|PosVecs], NegVecsArr, TVec) ->
+                          {Lambda, [{_, M}|Modules]}, [PVec|PosVecs], NegVecsArr, TVec) ->
     NegSs = m3gzcmp_score_line(Lambda, M, PVec, NegVecsArr, TVec),
     PS = lists:min(NegSs),
     NewNegBuf = m3gzcmp_update_negbuf(M, NegSs, NegBuf),
     m3gzcmp_predict1_one_iter(
       max(PScore, PS), NewNegBuf,
-      {Lambda, Modulars}, PosVecs, NegVecsArr, TVec).
+      {Lambda, Modules}, PosVecs, NegVecsArr, TVec).
 
 m3gzcmp_score_line(Lambda, M, PVec, NegVecsArr, TVec) ->
     lists:map(
@@ -456,13 +456,13 @@ m3gzcmpmr_pls_mk_reduce(KK, IterVecs) ->
 
 % M3-GZC-MP-MR predict
 
-m3gzcmpmr_predict({N, Lambda}, Modulars, TrainData, TestData) ->
-    m3gzc_func(fun m3gzcmpmr_predict1/4, {N, Lambda, Modulars}, TrainData, TestData).
+m3gzcmpmr_predict({N, Lambda}, Modules, TrainData, TestData) ->
+    m3gzc_func(fun m3gzcmpmr_predict1/4, {N, Lambda, Modules}, TrainData, TestData).
 
-m3gzcmpmr_predict1({N, Lambda, Modulars}, PosVecs, NegVecs, TestVecs) ->
+m3gzcmpmr_predict1({N, Lambda, Modules}, PosVecs, NegVecs, TestVecs) ->
     InputList = lists:map(
                   fun ({{PIdx, Ns}, PVec}) -> {PIdx, {PVec, Ns}} end,
-                  lists:zip(Modulars, PosVecs)),
+                  lists:zip(Modules, PosVecs)),
     NegVecsArr = array:from_list(NegVecs),
     Output = mapreduce(
                N,
