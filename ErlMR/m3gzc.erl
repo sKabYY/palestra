@@ -495,14 +495,17 @@ mp_list(Lambda, TVec, PVec, Ns, NVA) ->
       Ns).
 
 m3gzcmpmr_predict_reduce({{pos, Idx}, ScoreList}) ->
-    {Idx, lists:max(ScoreList)};
+    {Idx, max(0, lists:max(ScoreList))};
 m3gzcmpmr_predict_reduce({{neg, Idx, _}, ScoreList}) ->
     {{neg, Idx}, lists:max(ScoreList)}.
 
 m3gzcmpmr_predict_reduce_min({Idx, [Score]}) ->
     {Idx, Score};
 m3gzcmpmr_predict_reduce_min({{neg, Idx}, ScoreList}) ->
-    {Idx, lists:min(ScoreList)}.
+    {Idx, min(0, lists:min(ScoreList))}.
 
 m3gzcmpmr_predict_reduce_merge({Idx, [S1, S2]}) ->
     {Idx, S1 + S2}.
+
+% M3-GZC-FP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% M3-GZC-FP-MR %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

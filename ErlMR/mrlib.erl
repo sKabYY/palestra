@@ -157,7 +157,7 @@ start_phase_proc({{reduce, Reduce}, Emit}, Output) ->
     reduce_proc(Reduce, Output, Emit).
 
 % map proc
-map_proc(Map,InputList, Emit) ->
+map_proc(Map, InputList, Emit) ->
     phase_proc(fun (KV) -> Map(KV, Emit) end, InputList).
 
 % reduce proc
