@@ -6,7 +6,9 @@
          exper_m3gzcmrp/3,
          %%%
          exper_m3gzcmp/3,
-         exper_m3gzcmpmr/3]).
+         exper_m3gzcmpmr/3,
+         exper_m3gzcfp/3,
+         exper_m3gzcfpmr/3]).
 -import(mrlib,
         [info/2]).
 -import(m3gzc,
@@ -149,4 +151,16 @@ exper_m3gzcmpmr({N, Lambda, Threshold}, Step, OutputFn) ->
     exper_prune_one(
       fun m3gzc:m3gzcmpmr_prune/2, {N, Lambda, Threshold},
       fun m3gzc:m3gzcmpmr_predict/4, {N, Lambda},
+      Step, OutputFn).
+
+exper_m3gzcfp({Lambda, Threshold}, Step, OutputFn) ->
+    exper_prune_one(
+      fun m3gzc:m3gzcfp_prune/2, {Lambda, Threshold},
+      fun m3gzc:m3gzcfp_predict/4, Lambda,
+      Step, OutputFn).
+
+exper_m3gzcfpmr({N, Lambda, Threshold}, Step, OutputFn) ->
+    exper_prune_one(
+      fun m3gzc:m3gzcfpmr_prune/2, {N, Lambda, Threshold},
+      fun m3gzc:m3gzcfpmr_predict/4, {N, Lambda},
       Step, OutputFn).
