@@ -12,7 +12,9 @@
          m3gzcmp_prune/2,
          m3gzcmp_predict/4,
          m3gzcmpmr_prune/2,
-         m3gzcmpmr_predict/4]).
+         m3gzcmpmr_predict/4,
+         m3gzcfp_prune/2,
+         m3gzcfp_predict/4]).
 -import(mrlib,
         [mapreduce/3,
          info/2]).
@@ -508,4 +510,74 @@ m3gzcmpmr_predict_reduce_merge({Idx, [S1, S2]}) ->
     {Idx, S1 + S2}.
 
 % M3-GZC-FP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% M3-GZC-FP prune
+
+m3gzcfp_prune({Lambda, Threshold}, TrainData) ->
+    m3gzc_prune_func(fun m3gzcfp_prune1/4, {},
+                     Lambda, Threshold, TrainData).
+
+m3gzcfp_prune1({}, KK, PosVecs, NegVecs) ->
+    PosMods = m3gzcfp_prune_single(KK, PosVecs, NegVecs),
+    NegMods = m3gzcfp_prune_single(KK, NegVecs, PosVecs),
+    {extidx(PosMods), extidx(NegMods)}.
+
+m3gzcfp_prune_single(KK, PosVecs, NegVecs) ->
+    lists:map(
+      fun (PVec) ->
+              m3gzcfp_prune_single_one(KK, PVec, NegVecs)
+      end,
+      PosVecs).
+
+m3gzcfp_prune_single_one(KK, PVec, NegVecs) ->
+    SquareDists = lists:map(
+                    fun (NVec) ->
+                            squaredistance(PVec, NVec)
+                    end,
+                    NegVecs),
+    PruneLength = KK * lists:min(SquareDists),
+    unzip_fst(
+      lists:filter(
+        fun ({_, SD}) ->
+                SD < PruneLength
+        end,
+        extidx(SquareDists))).
+
+% M3-GZ-FP predict
+
+m3gzcfp_predict(Lambda, Modules, TrainData, TestData) ->
+    m3gzc_func(fun m3gzcfp_predict1/4, {Lambda, Modules}, TrainData, TestData).
+
+m3gzcfp_predict1({Lambda, Modules}, PosVecs, NegVecs, TestVecs) ->
+    lists:map(
+      fun (TVec) ->
+              m3gzcfp_predict1_one({Lambda, Modules}, PosVecs, NegVecs, TVec)
+      end,
+      TestVecs).
+
+m3gzcfp_predict1_one({Lambda, {PosModules, NegModules}},
+                     PosVecs, NegVecs, TVec) ->
+    PScore = m3gzcfp_predict_single(
+               Lambda, PosModules, PosVecs, NegVecs, TVec),
+    NScore = m3gzcfp_predict_single(
+               Lambda, NegModules, NegVecs, PosVecs, TVec),
+    PScore - NScore.
+
+m3gzcfp_predict_single(Lambda, Modules, PosVecs, NegVecs, TVec) ->
+    NegVecsArr = array:from_list(NegVecs),
+    lists:max(
+      lists:map(
+        fun ({PVec, NegMods}) ->
+                lists:min(
+                  lists:map(
+                    fun (NIdx) ->
+                            NVec = array:get(NIdx - 1, NegVecsArr),
+                            gzc(Lambda, PVec, NVec, TVec)
+                    end,
+                    NegMods))
+        end,
+        lists:zip(PosVecs, unzip_snd(Modules)))).
+
 % M3-GZC-FP-MR %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% M3-GZC-FP-MR prune
