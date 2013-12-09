@@ -311,9 +311,14 @@ test_pf() ->
            fun (X) -> X / N end,
            lists:seq(0, N)),
     Ys = lists:map(
-           fun (X) -> m3gzc_prune_factor(0.5, X) end,
+           fun (X) -> math:sqrt(m3gzc_prune_factor(0.5, X)) end,
            Xs),
-    savefile("test_pf.erldat", lists:zip(Xs, Ys)).
+    {ok, S} = file:open("test_pf.dat", write),
+    lists:foreach(
+      fun ({X, Y}) ->
+              io:format(S, "~p\t~p~n", [X, Y])
+      end,
+      lists:zip(Xs, Ys)).
 
 % M3-GZC-MP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
