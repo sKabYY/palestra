@@ -5,10 +5,13 @@
          exper_m3gzcmrc/3,
          exper_m3gzcmrp/3,
          %%%
+         exper_pruning/3,
          exper_m3gzcmp/3,
          exper_m3gzcmpmr/3,
          exper_m3gzcfp/3,
-         exper_m3gzcfpmr/3]).
+         exper_m3gzcfpmr/3,
+         exper_m3gzcap/3,
+         exper_m3gzcapmr/3]).
 -import(mrlib,
         [info/2]).
 -import(m3gzc,
@@ -164,3 +167,25 @@ exper_m3gzcfpmr({N, Lambda, Threshold}, Step, OutputFn) ->
       fun m3gzc:m3gzcfpmr_prune/2, {N, Lambda, Threshold},
       fun m3gzc:m3gzcfpmr_predict/4, {N, Lambda},
       Step, OutputFn).
+
+exper_m3gzcap({K, Lambda}, Step, OutputFn) ->
+    exper_prune_one(
+      fun m3gzc:m3gzcap_prune/2, K,
+      fun m3gzc:m3gzcap_predict/4, Lambda,
+      Step, OutputFn).
+
+exper_m3gzcapmr({N, K, Lambda}, Step, OutputFn) ->
+    exper_prune_one(
+      fun m3gzc:m3gzcapmr_prune/2, {N, K},
+      fun m3gzc:m3gzcapmr_predict/4, {N, Lambda},
+      Step, OutputFn).
+
+exper_pruning(N, Threshold, Step) ->
+    Lambda = 0.5,
+    K = 1,
+    exper_m3gzcmp({Lambda, Threshold}, Step, "output.m3gzcmp.erldat"),
+    exper_m3gzcmpmr({N, Lambda, Threshold}, Step, "output.m3gzcmpmr.erldat"),
+    exper_m3gzcfp({Lambda, Threshold}, Step, "output.m3gzcfp.erldat"),
+    exper_m3gzcfpmr({N, Lambda, Threshold}, Step, "output.m3gzcfpmr.erldat"),
+    exper_m3gzcap({K, Lambda}, Step, "output.m3gzcap.erldat"),
+    exper_m3gzcapmr({N, K, Lambda}, Step, "output.m3gzcapmr.erldat").
