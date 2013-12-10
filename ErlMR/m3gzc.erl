@@ -16,7 +16,11 @@
          m3gzcfp_prune/2,
          m3gzcfp_predict/4,
          m3gzcfpmr_prune/2,
-         m3gzcfpmr_predict/4]).
+         m3gzcfpmr_predict/4,
+         m3gzcap_prune/2,
+         m3gzcap_predict/4,
+         m3gzcapmr_prune/2,
+         m3gzcapmr_predict/4]).
 -import(mrlib,
         [mapreduce/3,
          info/2]).
@@ -661,3 +665,84 @@ m3gzcfpmr_predict_mk_map(Lambda, NegVecsArr, TestVecs) ->
 
 m3gzcfpmr_predict_reduce({TIdx, ScoreList}) ->
     {TIdx, lists:max(ScoreList)}.
+
+% M3-GZC-AP %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% M3-GZC-AP prune
+
+m3gzcap_prune(K, TrainData) ->
+    {PosVecs, NegVecs} = label_partition(TrainData),
+    m3gzcap_prune1(K, PosVecs, NegVecs).
+
+m3gzcap_prune1(K, PosVecs, NegVecs) ->
+    PosMods = m3gzcap_prune_single(K, PosVecs, NegVecs),
+    NegMods = m3gzcap_prune_single(K, NegVecs, PosVecs),
+    {extidx(PosMods), extidx(NegMods)}.
+
+m3gzcap_prune_single(K, PosVecs, NegVecs) ->
+    lists:map(
+      fun (PVec) ->
+              m3gzcap_prune_single_one(K, PVec, NegVecs)
+      end,
+      PosVecs).
+
+m3gzcap_prune_single_one(K, PVec, NegVecs) ->
+    SquareDists = lists:map(
+                    fun (NVec) ->
+                            squaredistance(PVec, NVec)
+                    end,
+                    NegVecs),
+    find_least_k_idx(K, SquareDists).
+
+find_least_k_idx(K, List) ->
+    find_least_k_idx_acc(ordsets:new(), 0, K, extidx(List)).
+
+find_least_k_idx_acc(Acc, _, _, []) ->
+    unzip_snd(ordsets:to_list(Acc));
+find_least_k_idx_acc(Acc, Len, K, [{I, V}|T]) when Len < K ->
+    NewAcc = ordsets:add_element({-V, I}, Acc),
+    find_least_k_idx_acc(NewAcc, Len + 1, K, T);
+find_least_k_idx_acc(Acc, Len, K, [{I, V}|T]) ->
+    [{Min, _}|RestAcc] = Acc,
+    if
+        Min > -V ->
+            find_least_k_idx_acc(Acc, Len + 1, K, T);
+        true ->
+            NewAcc = ordsets:add_element({-V, I}, RestAcc),
+            find_least_k_idx_acc(NewAcc, Len + 1, K, T)
+    end.
+
+% M3-GZC-AP predice
+
+m3gzcap_predict(Lambda, Modules, TrainData, TestData) ->
+    m3gzcfp_predict(Lambda, Modules, TrainData, TestData).
+
+% M3-GZC-AP-MR %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+% M3-GZC-AP-MR prune
+
+m3gzcapmr_prune({N, K}, TrainData) ->
+    {PosVecs, NegVecs} = label_partition(TrainData),
+    m3gzcapmr_prune1(N, K, PosVecs, NegVecs).
+
+m3gzcapmr_prune1(N, K, PosVecs, NegVecs) ->
+    PosMods = m3gzcapmr_prune_single(N, K, PosVecs, NegVecs),
+    NegMods = m3gzcapmr_prune_single(N, K, NegVecs, PosVecs),
+    {PosMods, NegMods}.
+
+m3gzcapmr_prune_single(N, K, PosVecs, NegVecs) ->
+    Output = mapreduce(
+               N,
+               extidx(PosVecs),
+               [{reduce, m3gzcapmr_prune_single_mk_reduce(K, NegVecs)}]),
+    lists:keysort(1, Output).
+
+m3gzcapmr_prune_single_mk_reduce(K, NegVecs) ->
+    fun ({PIdx, PVec}) ->
+            {PIdx, m3gzcap_prune_single_one(K, PVec, NegVecs)}
+    end.
+
+% M3-GZC-AP-MR predict
+
+m3gzcapmr_predict({N, Lambda}, Modules, TrainData, TestData) ->
+    m3gzcfpmr_predict({N, Lambda}, Modules, TrainData, TestData).
