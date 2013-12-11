@@ -21,6 +21,7 @@
 *.erlprof
 *.trace
 *.erldat
+*.dat
 
 # python
 *.pyc

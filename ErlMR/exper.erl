@@ -5,7 +5,8 @@
          exper_m3gzcmrc/3,
          exper_m3gzcmrp/3,
          %%%
-         exper_pruning/3,
+         exper_pruning/4,
+         exper_twospirals/5,
          exper_m3gzcmp/3,
          exper_m3gzcmpmr/3,
          exper_m3gzcfp/3,
@@ -180,12 +181,85 @@ exper_m3gzcapmr({N, K, Lambda}, Step, OutputFn) ->
       fun m3gzc:m3gzcapmr_predict/4, {N, Lambda},
       Step, OutputFn).
 
-exper_pruning(N, Threshold, Step) ->
+exper_pruning(N, K, Threshold, Step) ->
     Lambda = 0.5,
-    K = 1,
     exper_m3gzcmp({Lambda, Threshold}, Step, "output.m3gzcmp.erldat"),
     exper_m3gzcmpmr({N, Lambda, Threshold}, Step, "output.m3gzcmpmr.erldat"),
     exper_m3gzcfp({Lambda, Threshold}, Step, "output.m3gzcfp.erldat"),
     exper_m3gzcfpmr({N, Lambda, Threshold}, Step, "output.m3gzcfpmr.erldat"),
     exper_m3gzcap({K, Lambda}, Step, "output.m3gzcap.erldat"),
     exper_m3gzcapmr({N, K, Lambda}, Step, "output.m3gzcapmr.erldat").
+
+exper_twospirals(N, K, Threshold, Max, Step) ->
+    Lambda = 0.5,
+    TrainData = m3gzc:loadfile("testdata/twospirals.erldat"),
+    TestData = lists:map(
+                 fun ({X, Y}) -> {0, [{1, X}, {2, Y}]} end,
+                 meshgrid(Max, Step)),
+    exper_ts_m3gzcmrp({N, Lambda, Threshold},
+                      TrainData, TestData, "twospirals.m3gzcmrp.dat"),
+    exper_ts_m3gzcfpmr({N, Lambda, Threshold},
+                       TrainData, TestData, "twospirals.m3gzcfpmr.dat"),
+    exper_ts_m3gzcapmr({N, Lambda, K, Threshold},
+                       TrainData, TestData, "twospirals.m3gzcapmr.dat").
+
+meshgrid(Max, Step) ->
+    Xs = linspace(-Max, Max, Step),
+    Ys = linspace(-Max, Max, Step),
+    mkpair(Xs, Ys).
+
+linspace(Min, Max, Step) ->
+    linspace_acc([], Min, Max, Step).
+
+linspace_acc(Acc, Cur, Max, _) when Cur > Max -> lists:reverse(Acc);
+linspace_acc(Acc, Cur, Max, Step) ->
+    linspace_acc([Cur|Acc], Cur + Step, Max, Step).
+
+mkpair(L1, L2) ->
+    mkpair_acc([], L1, L2, L1).
+
+mkpair_acc(Acc, [], [_|T2], L1) ->
+    mkpair_acc(Acc, L1, T2, L1);
+mkpair_acc(Acc, _, [], _) ->
+    lists:reverse(Acc);
+mkpair_acc(Acc, [H1|T1], L2, L1) ->
+    [H2|_] = L2,
+    mkpair_acc([{H1, H2}|Acc], T1, L2, L1).
+
+exper_ts_save(OutputFn, Threshold, TestData, Output) ->
+    Data = lists:zip(
+             lists:map(
+               fun ({_, [{1, X}, {2, Y}]}) -> {X, Y} end,
+               TestData),
+             lists:map(
+               fun (Score) ->
+                       if
+                           Score > Threshold -> 1;
+                           Score < -Threshold -> -1;
+                           true -> 0
+                       end
+               end,
+               Output)),
+    {ok, S} = file:open(OutputFn, write),
+    lists:foreach(
+      fun ({{X, Y}, Z}) ->
+              io:format(S, "~p\t~p\t~p\n", [X, Y, Z])
+      end,
+      Data),
+    file:close(S).
+
+exper_ts_m3gzcmrp({N, Lambda, Threshold}, TrainData, TestData, OutputFn) ->
+    {_, Output} = m3gzc:m3gzcmrp({N, Lambda}, TrainData, TestData),
+    exper_ts_save(OutputFn, Threshold, TestData, Output).
+
+exper_ts_m3gzcfpmr({N, Lambda, Threshold}, TrainData, TestData, OutputFn) ->
+    Modules = m3gzc:m3gzcfpmr_prune({N, Lambda, Threshold}, TrainData),
+    {_, Output} = m3gzc:m3gzcfpmr_predict({N, Lambda}, Modules,
+                                          TrainData, TestData),
+    exper_ts_save(OutputFn, Threshold, TestData, Output).
+
+exper_ts_m3gzcapmr({N, Lambda, K, Threshold}, TrainData, TestData, OutputFn) ->
+    Modules = m3gzc:m3gzcapmr_prune({N, K}, TrainData),
+    {_, Output} = m3gzc:m3gzcapmr_predict({N, Lambda}, Modules,
+                                          TrainData, TestData),
+    exper_ts_save(OutputFn, Threshold, TestData, Output).
