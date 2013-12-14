@@ -1,5 +1,6 @@
 -module(m3gzc).
 -export([loadfile/1,
+         loadfile_lines/1,
          savefile/2,
          difftime/2,
          traindata_info/1,
@@ -35,6 +36,18 @@ loadfile(Filename) ->
     {ok, Data} = io:read(S, ''),
     file:close(S),
     Data.
+
+loadfile_lines(Filename) ->
+    {ok, S} = file:open(Filename, read),
+    Data = loadfile_lines_acc([], S),
+    file:close(S),
+    Data.
+
+loadfile_lines_acc(Acc, S) ->
+    case io:read(S, '') of
+        {ok, D} -> loadfile_lines_acc([D|Acc], S);
+        eof -> lists:reverse(Acc)
+    end.
 
 savefile(Filename, Data) ->
     {ok, S} = file:open(Filename, write),
