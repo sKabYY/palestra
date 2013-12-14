@@ -84,7 +84,7 @@ diffv(V1, V2) -> diffv_acc([], V1, V2).
 diffv_acc(Acc, [], []) -> lists:reverse(Acc);
 diffv_acc(Acc, V1, []) -> lists:reverse(V1) ++ Acc;
 diffv_acc(Acc, [], V2) ->
-    lists:revers(lists:map(fun ({D, X}) -> {D, -X} end, V2)) ++ Acc;
+    lists:reverse(lists:map(fun ({D, X}) -> {D, -X} end, V2)) ++ Acc;
 diffv_acc(Acc, [A1|V1], [A2|V2]) ->
     {D1, X1} = A1,
     {D2, X2} = A2,
