@@ -5,6 +5,7 @@
          traindata_info/1,
          test_pf/0,
          m3gzc_prune_factor/2,
+         m3gzc_buftest/4,
          m3gzc/3,
          m3gzcmrc/3,
          m3gzcmrp/3,
@@ -134,6 +135,30 @@ traindata_info(TrainData) ->
     Np = length(PosData),
     Nn = length(NegData),
     {Np, Nn, Np * Nn}.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+m3gzc_buftest(M3gzcPredict, Params, TestData, BufSize) ->
+    m3gzc_buftest_acc([], [], M3gzcPredict, Params, TestData, BufSize).
+
+m3gzc_buftest_acc(TestLabelsAcc, PredictLabelsAcc, _, _,
+                  [], _) ->
+    {lists:concat(lists:reverse(TestLabelsAcc)),
+     lists:concat(lists:reverse(PredictLabelsAcc))};
+m3gzc_buftest_acc(TestLabelsAcc, PredictLabelsAcc, M3gzcPredict, Params,
+                  TestData, BufSize) ->
+    {Buf, Rest} = splitn(BufSize, TestData),
+    Args = Params ++ [Buf],
+    {TestLabels, PredictLabels} = apply(m3gzc, M3gzcPredict, Args),
+    m3gzc_buftest_acc([TestLabels|TestLabelsAcc], [PredictLabels|PredictLabelsAcc],
+                      M3gzcPredict, Params,
+                      Rest, BufSize).
+
+splitn(N, List) ->
+    if
+        length(List) > N -> lists:split(List);
+        true -> {List, []}
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
