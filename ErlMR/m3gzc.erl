@@ -5,6 +5,7 @@
          difftime/2,
          score_to_label/2,
          traindata_info/1,
+         evaluate/2,
          nn/2,
          test_pf/0,
          m3gzc_prune_factor/2,
@@ -180,6 +181,22 @@ splitn(N, List) ->
     if
         length(List) > N -> lists:split(List);
         true -> {List, []}
+    end.
+
+evaluate(Ts, Ps) ->
+    evaluate_acc(0, 0, 0, 0, lists:zip(Ts, Ps)).
+
+evaluate_acc(TP, FP, TN, FN, []) ->
+    {TP, FP, TN, FN, TP+FP+TN+FN};
+evaluate_acc(TP, FP, TN, FN, [{T, P}|Rest]) when P > 0 ->
+    if
+        T > 0 -> evaluate_acc(TP + 1, FP, TN, FN, Rest);
+        T < 0 -> evaluate_acc(TP, FP + 1, TN, FN, Rest)
+    end;
+evaluate_acc(TP, FP, TN, FN, [{T, P}|Rest]) when P < 0 ->
+    if
+        T > 0 -> evaluate_acc(TP, FP, TN, FN + 1, Rest);
+        T < 0 -> evaluate_acc(TP, FP, TN + 1, FN, Rest)
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
