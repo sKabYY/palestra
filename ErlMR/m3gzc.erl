@@ -3,6 +3,7 @@
          loadfile_lines/1,
          savefile/2,
          difftime/2,
+         score_to_label/2,
          traindata_info/1,
          test_pf/0,
          m3gzc_prune_factor/2,
@@ -139,6 +140,13 @@ label_partition(Data) ->
     PosVecs = unzip_snd(PosData),
     NegVecs = unzip_snd(NegData),
     {PosVecs, NegVecs}.
+
+score_to_label(Threshold, Score) ->
+    if
+        Score > Threshold -> 1;
+        Score < -Threshold -> -1;
+        true -> 0
+    end.
 
 traindata_info(TrainData) ->
     {PosData, NegData} =
