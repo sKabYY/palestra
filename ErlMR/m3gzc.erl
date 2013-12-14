@@ -5,6 +5,7 @@
          difftime/2,
          score_to_label/2,
          traindata_info/1,
+         nn/2,
          test_pf/0,
          m3gzc_prune_factor/2,
          m3gzc_buftest/4,
@@ -180,6 +181,24 @@ splitn(N, List) ->
         length(List) > N -> lists:split(List);
         true -> {List, []}
     end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% KNN %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+nn(TrainData, TestData) ->
+    {TestLabels, TestVecs} = lists:unzip(TestData),
+    PredictLabels = lists:map(
+                      fun (TVec) -> nn_one(TrainData, TVec) end,
+                      TestVecs),
+    {TestLabels, PredictLabels}.
+
+nn_one(TrainData, TVec) ->
+    {_, L} = lists:min(
+               lists:map(
+                 fun ({Label, Vec}) ->
+                         {squaredistance(Vec, TVec), Label}
+                 end,
+                 TrainData)),
+    L.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
