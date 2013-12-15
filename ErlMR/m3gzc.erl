@@ -184,19 +184,21 @@ splitn(N, List) ->
     end.
 
 evaluate(Ts, Ps) ->
-    evaluate_acc(0, 0, 0, 0, lists:zip(Ts, Ps)).
+    evaluate_acc(0, 0, 0, 0, 0, lists:zip(Ts, Ps)).
 
-evaluate_acc(TP, FP, TN, FN, []) ->
-    {TP, FP, TN, FN, TP+FP+TN+FN};
-evaluate_acc(TP, FP, TN, FN, [{T, P}|Rest]) when P > 0 ->
+evaluate_acc(TP, FP, TN, FN, UN, []) ->
+    {TP, FP, TN, FN, TP+FP+TN+FN, UN};
+evaluate_acc(TP, FP, TN, FN, UN, [{_, P}|Rest]) when P =:= 0 ->
+    evaluate_acc(TP, FP, TN, FN, UN + 1, Rest);
+evaluate_acc(TP, FP, TN, FN, UN, [{T, P}|Rest]) when P > 0 ->
     if
-        T > 0 -> evaluate_acc(TP + 1, FP, TN, FN, Rest);
-        T < 0 -> evaluate_acc(TP, FP + 1, TN, FN, Rest)
+        T > 0 -> evaluate_acc(TP + 1, FP, TN, FN, UN, Rest);
+        T < 0 -> evaluate_acc(TP, FP + 1, TN, FN, UN, Rest)
     end;
-evaluate_acc(TP, FP, TN, FN, [{T, P}|Rest]) when P < 0 ->
+evaluate_acc(TP, FP, TN, FN, UN, [{T, P}|Rest]) when P < 0 ->
     if
-        T > 0 -> evaluate_acc(TP, FP, TN, FN + 1, Rest);
-        T < 0 -> evaluate_acc(TP, FP, TN + 1, FN, Rest)
+        T > 0 -> evaluate_acc(TP, FP, TN, FN + 1, UN, Rest);
+        T < 0 -> evaluate_acc(TP, FP, TN + 1, FN, UN, Rest)
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
