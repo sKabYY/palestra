@@ -19,6 +19,12 @@ in (double 12)"
 
 ))
 
-(interp-disp (lambda (src)
-               (cps-program->list (cps-translate src)))
-             letrec-cases)
+(define (p src)
+  (let* ((cps-pgm (cps-translate src))
+         (result0 (interp src))
+         (result (value-of-program/k cps-pgm)))
+    (eopl:pretty-print result0)
+    (eopl:pretty-print result)
+    (cps-program->list cps-pgm)))
+
+(interp-disp p letrec-cases)

@@ -2,7 +2,8 @@
 
 (#%provide interp
            cps-translate
-           cps-program->list)
+           cps-program->list
+           value-of-program/k)
 (define (interp src) (value-of-program (scan&parse src)))
 (define (cps-translate src) (cps-of-program (scan&parse src)))
 
@@ -115,7 +116,9 @@
   (list-val
     (lst list0?))
   (proc-val
-    (proc proc?)))
+    (proc proc?))
+  (cps-proc-val
+    (proc cps-proc?)))
 
 (define (report-expval-extractor-error type val)
   (eopl:error "Type error:" val type))
@@ -139,6 +142,11 @@
   (cases expval val
     (proc-val (proc) proc)
     (else (report-expval-extractor-error 'proc val))))
+
+(define (expval->cps-proc val)
+  (cases expval val
+    (cps-proc-val (proc) proc)
+    (else (report-expval-extractor-error 'cps-proc val))))
 
 (define (minus val)
   (cases expval val
@@ -575,3 +583,69 @@
     (cdr-prim () 'cdr)
     (null?-prim () 'null?)
     (list-prim () 'list)))
+
+(define (value-of-program/k pgm)
+  (cases cps-program pgm
+    (cps-a-program (exp) (value-of/k exp (init-env)))))
+
+(define (value-of/k exp env)
+  (define (s>> sexps)
+    (map (lambda (sexp) (value-of-simple-exp sexp env)) sexps))
+  (cases tf-exp exp
+    (simple-exp->exp (sexp) (value-of-simple-exp sexp env))
+    (cps-let-exp (vars vals body)
+      (let ((new-env (extend-env
+                       env
+                       vars
+                       (s>> vals))))
+        (value-of/k body new-env)))
+    (cps-letrec-exp (p-names b-varss p-bodies body)
+      (let ((new-env (extend-env-rec/k env p-names b-varss p-bodies)))
+        (value-of/k body new-env)))
+    (cps-if-exp (simple1 body1 body2)
+      (if (expval->bool (value-of-simple-exp simple1 env))
+          (value-of/k body1 env)
+          (value-of/k body2 env)))
+    (cps-call-exp (rator rands)
+      (apply-proc/k
+        (expval->cps-proc (value-of-simple-exp rator env))
+        (s>> rands)))))
+
+(define-datatype cps-proc cps-proc?
+  (a-cps-proc
+    (vars (list-of symbol?))
+    (body tf-exp?)
+    (env environment?)))
+
+(define (extend-env-rec/k env p-names b-varss p-bodies)
+  ; assert (= (length p-names) (length b-varss) (length p-bodies))
+  (let* ((frm (empty-frame))
+         (new-env (extend-env-frame env frm))
+         (mk-proc (lambda (vars body)
+                    (cps-proc-val (a-cps-proc vars body new-env)))))
+    (frame-set! frm p-names (map mk-proc b-varss p-bodies))
+    new-env))
+
+(define (apply-proc/k proc vals)
+  (cases cps-proc proc
+    (a-cps-proc (vars body env)
+      (let ((nvars (length vars))
+            (nvals (length vals)))
+        (if (= nvars nvals)
+            (value-of/k body (extend-env env vars vals))
+            (report-arguments-not-match vars vals))))))
+
+(define (value-of-simple-exp sexp env)
+  (define (s>> sexps)
+    (map (lambda (sexp) (value-of-simple-exp sexp env)) sexps))
+  (cases simple-exp sexp
+    (cps-end-cont ()
+      (cps-proc-val
+        (a-cps-proc (list 'x) (simple-exp->exp (cps-var-exp 'x)) env)))
+    (cps-number-exp (number) (num-val number))
+    (cps-var-exp (var) (apply-env env var))
+    (cps-apply-primitive-exp (prim rands)
+      (apply-primitive prim (s>> rands)))
+    (cps-proc-exp (vars body)
+      (cps-proc-val
+        (a-cps-proc vars body env)))))
