@@ -24,7 +24,7 @@
 ; primitive-procedures: minus, diff(-), addition(+), ,multiplication(*),
 ;                       quotient, remainder,
 ;                       zero?, equal?, greater?, less?,
-;                       cons, car, cdr, null?, list
+;                       cons, car, cdr, null?, list, list?
 ;
 ; global value: emptylist
 
@@ -86,7 +86,8 @@
     (primitive ("car") car-prim)
     (primitive ("cdr") cdr-prim)
     (primitive ("null?") null?-prim)
-    (primitive ("list") list-prim)))
+    (primitive ("list") list-prim)
+    (primitive ("list?") list?-prim)))
 
 (sllgen:make-define-datatypes
   scanner-spec grammar-spec)
@@ -138,6 +139,11 @@
     (list-val (lst) lst)
     (else (report-expval-extractor-error 'list val))))
 
+(define (list-val? val)
+  (cases expval val
+    (list-val (lst) #t)
+    (else #f)))
+
 (define (expval->proc val)
   (cases expval val
     (proc-val (proc) proc)
@@ -156,42 +162,37 @@
 ; list ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype list0 list0?
   (empty-list)
-  (non-empty-list
-    (head expval?)
-    (tail expval?)))
+  (not-empty-list
+   (head expval?)
+   (tail list0?)))
 
-(define the-empty-list (list-val (empty-list)))
+(define the-empty-list (empty-list))
 
-(define (report-null-error)
-  (eopl:error "() is not a pair"))
+(define (report-empty-list-error)
+  (eopl:error "empty list"))
 
 (define (cons0 head tail)
-  (list-val (non-empty-list head tail)))
+  (not-empty-list head tail))
 
 (define (car0 lst)
-  (cases list0 (expval->list lst)
-    (empty-list () report-null-error)
-    (non-empty-list (head tail) head)))
+  (cases list0 lst
+    (empty-list () (report-empty-list-error))
+    (not-empty-list (head tail) head)))
 
 (define (cdr0 lst)
-  (cases list0 (expval->list lst)
-    (empty-list () report-null-error)
-    (non-empty-list (head tail) tail)))
+  (cases list0 lst
+    (empty-list () (report-empty-list-error))
+    (not-empty-list (head tail) tail)))
 
 (define (empty-list? lst)
-  (cases expval lst
-    (list-val (l)
-      (if (list0? l)
-        (cases list0 l
-          (empty-list () (bool-val #t))
-          (else (bool-val #f)))
-        (bool-val #f)))
+  (cases list0 lst
+    (empty-list () #t)
     (else #f)))
 
-(define (mklist . elems)
+(define (mklist0 elems)
   (if (null? elems)
-    the-empty-list
-    (cons0 (car elems) (apply mklist (cdr elems)))))
+      the-empty-list
+      (cons0 (car elems) (mklist0 (cdr elems)))))
 
 ; procedure ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-datatype proc0 proc?
@@ -325,36 +326,66 @@
   (extend-env
     (empty-env)
     (list 'emptylist)
-    (list the-empty-list)))
+    (list (list-val the-empty-list))))
 
-(define (apply-primitive prim list-of-exp)
+(define (apply-primitive prim expvals)
+  (define (>> prim/expval) (apply prim/expval expvals))
   (cases primitive prim
-    (add-prim ()
-      (num-val (apply + (map expval->num list-of-exp))))
-    (diff-prim ()
-      (num-val (apply - (map expval->num list-of-exp))))
-    (mult-prim ()
-      (num-val (apply * (map expval->num list-of-exp))))
-    (minus-prim () (apply minus list-of-exp))
-    (quotient-prim ()
-      (num-val (apply quotient (map expval->num list-of-exp))))
-    (remainder-prim ()
-      (num-val (apply remainder (map expval->num list-of-exp))))
-    (zero?-prim ()
-      (bool-val (apply zero? (map expval->num list-of-exp))))
-    (equal?-prim ()
-      (bool-val (apply = (map expval->num list-of-exp))))
-    (greater?-prim ()
-      (bool-val (apply > (map expval->num list-of-exp))))
-    (less?-prim ()
-      (bool-val (apply < (map expval->num list-of-exp))))
-    (cons-prim () (apply cons0 list-of-exp))
-    (car-prim () (apply car0 list-of-exp))
-    (cdr-prim () (apply cdr0 list-of-exp))
-    (null?-prim () (apply empty-list? list-of-exp))
-    (list-prim () (apply mklist list-of-exp))))
+    (add-prim () (>> add/expval))
+    (diff-prim () (>> diff/expval))
+    (mult-prim () (>> mult/expval))
+    (minus-prim () (>> minus/expval))
+    (quotient-prim () (>> quotient/expval))
+    (remainder-prim () (>> remainder/expval))
+    (zero?-prim () (>> zero?/expval))
+    (equal?-prim () (>> equal?/expval))
+    (greater?-prim () (>> greater?/expval))
+    (less?-prim () (>> less?/expval))
+    (cons-prim () (>> cons/expval))
+    (car-prim () (>> car/expval))
+    (cdr-prim () (>> cdr/expval))
+    (null?-prim () (>> null?/expval))
+    (list-prim () (>> list/expval))
+    (list?-prim () (>> list?/expval))))
 
-; read-eval-print ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; primitive procedures ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (add/expval . vals) (num-val (apply + (map expval->num vals))))
+
+(define (diff/expval val1 val2)
+  (num-val (- (expval->num val1) (expval->num val2))))
+
+(define (mult/expval . vals) (num-val (apply * (map expval->num vals))))
+
+(define (minus/expval val) (num-val (- (expval->num val))))
+
+(define (quotient/expval val1 val2)
+  (num-val (quotient (expval->num val1) (expval->num val2))))
+
+(define (remainder/expval val1 val2)
+  (num-val (remainder (expval->num val1) (expval->num val2))))
+
+(define (zero?/expval val) (bool-val (zero? (expval->num val))))
+
+(define (equal?/expval . vals) (bool-val (apply = (map expval->num vals))))
+
+(define (greater?/expval . vals) (bool-val (apply > (map expval->num vals))))
+
+(define (less?/expval . vals) (bool-val (apply < (map expval->num vals))))
+
+(define (cons/expval val1 val2) (list-val (cons0 val1 (expval->list val2))))
+
+(define (car/expval val) (car0 (expval->list val)))
+
+(define (cdr/expval val) (list-val (cdr0 (expval->list val))))
+
+(define (null?/expval val) (bool-val (empty-list? (expval->list val))))
+
+(define (list/expval . vals) (list-val (mklist0 vals)))
+
+(define (list?/expval lst) (bool-val (list-val? lst)))
+
+; read-eval-print ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define read-eval-print
   (sllgen:make-rep-loop
     "> " value-of-program
@@ -582,7 +613,8 @@
     (car-prim () 'car)
     (cdr-prim () 'cdr)
     (null?-prim () 'null?)
-    (list-prim () 'list)))
+    (list-prim () 'list)
+    (list?-prim () 'list?)))
 
 (define (value-of-program/k pgm)
   (cases cps-program pgm

@@ -105,5 +105,10 @@ in (odd 13)"
 "letrec gcd(a, b) = if zero?(a) then b else (gcd remainder(b, a) a)
 in (gcd 144 12144)"
 
+"letrec
+ sum(x) = if list?(x) then (sum-list x) else x,
+ sum-list(lst) = if null?(lst) then 0 else +((sum car(lst)), (sum-list cdr(lst)))
+in (sum list(list(1, 2), list(list(3, 4), 5)))"
+
 ))
 (define letrec-cases (append proc-cases letrec-cases1))
