@@ -13,8 +13,6 @@
 ;            ::= Identifier
 ;            ::= let {Identifier = Expression}*(,) in Expression
 ;            ::= letrec {Identifier ({Identifier}*(,)) = Expression}*(,) in Expression
-;            ;% trck for defining datatype
-;            ::= %tvar-type Number
 ;
 ; ExpVal: Number, Boolean, List, Proc
 ; DenVal = ExpVal
@@ -70,9 +68,6 @@
          ",")
        "in" expression)
       letrec-exp)
-    (expression
-      ("%tvar-type" serial-number)
-      type-exp)
     (primitive ("+") add-prim)
     (primitive ("-") diff-prim)
     (primitive ("*") mult-prim)

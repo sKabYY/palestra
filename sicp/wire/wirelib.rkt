@@ -8,6 +8,7 @@
          logical-or)
 
 (provide wire!
+         connect!
          propagate
          make-input
          set-input!
@@ -146,16 +147,17 @@
                      (list o output logical-and)))))
 ;;;;;;
 
-(define (wire! pin1 pin2)
+(define (connect! pin-from pin-to)
   (define wire-delay 0)
-  (define (wire1 pin-from pin-to)
-    (add-action! pin-from
-                 wire-delay
-                 (lambda ()
-                   (set-signal! pin-to
-                                (get-signal pin-from)))))
-  (wire1 pin1 pin2)
-  (wire1 pin2 pin1))
+  (add-action! pin-from
+               wire-delay
+               (lambda ()
+                 (set-signal! pin-to
+                              (get-signal pin-from)))))
+
+(define (wire! pin1 pin2)
+  (connect! pin1 pin2)
+  (connect! pin2 pin1))
 
 (define max-iteration 10)
 

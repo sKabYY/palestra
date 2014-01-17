@@ -10,7 +10,7 @@
        (output (make-probe print-logical)))
   (wire! input1 (get-pin and-gate 'a))
   (wire! input2 (get-pin and-gate 'b))
-  (wire! output (get-pin and-gate 'output))
+  (wire! (get-pin and-gate 'output) output)
   (set-input! input1 logical-1)
   (set-input! input2 logical-1)
   (propagate))
