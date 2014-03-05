@@ -4,7 +4,15 @@
 
 (define (interp e) (value-of e))
 
-; todo
+; Expression ::= Symbol
+;            ::= Number
+;            ::= (lambda (Symbol) Expression)
+;            ::= (add1 Expression)
+;            ::= (sub1 Expression)
+;            ::= (+ Expression Expression)
+;            ::= (- Expression Expression)
+;            ::= (* Expression Expression)
+;            ::= (Expression Expression)
 
 (define (value-of exp1)
   (match exp1
