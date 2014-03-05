@@ -1,6 +1,10 @@
 #lang racket
 
+(provide interp)
+
 (define (interp e) (value-of e))
+
+; todo
 
 (define (value-of exp1)
   (match exp1
@@ -16,7 +20,7 @@
     [`(iszero ,e) (= (value-of e) 0)]
     [`(+ ,e1 ,e2) (+ (value-of e1) (value-of e2))]
     [`(- ,e1 ,e2) (- (value-of e1) (value-of e2))]
-    [`(* ,e1 ,e2) (+ (value-of e1) (value-of e2))]
+    [`(* ,e1 ,e2) (* (value-of e1) (value-of e2))]
     ; an application
     [`(,e1 ,e2) (proc-apply (value-of e1) (value-of e2))]))
 
@@ -59,5 +63,5 @@
 (define (proc-apply proc val)
   (value-of (substitute (procedure-var proc) val (procedure-body proc))))
 
-(require "driver-loop.rkt")
-(driver-loop interp)
+;(require "lib.rkt")
+;(driver-loop interp)
