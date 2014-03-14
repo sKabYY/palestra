@@ -19,3 +19,13 @@ a a
 ((lambda (x) (+ x 1)) 2) 3
 
 ))
+
+(define test-cek1
+  '(
+
+((lambda () 1)) 1
+((lambda (x y) (+ x y)) 2 3) 5
+
+))
+
+(define test-cek (append test-iswim test-cek1))
