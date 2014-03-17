@@ -17,6 +17,7 @@ a a
 (iszero (* 3 (- 1 1))) #t
 
 ((lambda (x) (+ x 1)) 2) 3
+((lambda (x) (+ x 1)) (+ 1 1)) 3
 
 ))
 
