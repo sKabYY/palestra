@@ -6,7 +6,6 @@
   '(
 
 1 1
-a a
 (add1 32) 33
 (sub1 33) 32
 (iszero 11) #f
@@ -25,8 +24,18 @@ a a
   '(
 
 ((lambda () 1)) 1
-((lambda (x y) (+ x y)) 2 3) 5
+((lambda (x y) (+ x y)) 11 3) 14
 
 ))
 
 (define test-cek (append test-iswim test-cek1))
+
+(define test-ceks1
+  '(
+
+(let ((a 12) (b 3)) (+ a b)) 15
+(let ((x 0)) (begin (set! x 1) x)) 1
+
+))
+
+(define test-ceks (append test-cek test-ceks1))
