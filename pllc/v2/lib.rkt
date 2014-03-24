@@ -38,7 +38,7 @@
               [answer (cadr sources)])
           (display count) (displayln ":")
           (begin-green)
-          (display src) (newline)
+          (pretty-print src)
           (begin-red)
           (let ([output (interp src)])
             (display output) (newline)

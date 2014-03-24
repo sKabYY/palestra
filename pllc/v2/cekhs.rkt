@@ -12,6 +12,10 @@
 ;            | (lambda (Symbol*) Expression)
 ;            | (Expression Expression*)
 ;            | (set! Symbol Expression)
+;            | (letcc Symbol Expression)
+;            | (cc Expression Expression)
+;            | (throw Expression)
+;            | (catch Expression with Symbol Expression)
 
 ;            | (add1 Expression)
 ;            | (sub1 Expression)
@@ -77,11 +81,7 @@
   (define (apply-cont cont v)
     (cond
      [(end-cont? cont) (apply-end-cont cont v)]
-     [(opt-cont? cont) (apply-opt-cont cont v)]
-     [(arg-cont? cont) (apply-arg-cont cont v)]
-     [(fun-cont? cont) (apply-fun-cont cont v)]
-     [(set-cont? cont) (apply-set-cont cont v)]
-     [(begin-cont? cont) (apply-begin-cont cont v)]))
+     [(continuation? cont) (apply-continuation cont v)]))
   (define (value? v)
     (or (void? v)
         (boolean? v)
@@ -106,6 +106,18 @@
     ; a begin statement
     [`(begin ,e1 . ,exps)
      (eval/k e1 env (begin-cont cont env exps))]
+    ; a letcc statement
+    [`(letcc ,s ,e1)
+     (eval/k e1 (extend-env env s cont) cont)]
+    ; a cc statement
+    [`(cc ,e1 ,e2)
+     (eval/k e1 env (ccval-cont cont env e2))]
+    ; a throw statement
+    [`(throw ,e1)
+     (eval/k e1 env (throw-cont cont))]
+    ; a catch statement
+    [`(catch ,e1 with ,s ,e2)
+     (eval/k e1 env (catch-cont cont env s e2))]
     ; an application
     [`(,e1 . ,exps)
      (let ((p (assoc e1 opts)))
@@ -120,83 +132,128 @@
 ; continuation ;;;
 
 ;
-(struct end-cont ())
-(define (apply-end-cont cont1 v)
+
+(define (end-program msg v)
   (printf "store: ~a~n" the-store)
-  (displayln "###Done!###")
+  (displayln msg)
   v)
 
-(struct opt-cont (cont env opt exps vals))
-(define (apply-opt-cont cont1 v)
-  (let ((cont (opt-cont-cont cont1))
-        (env (opt-cont-env cont1))
-        (opt (opt-cont-opt cont1))
-        (exps (opt-cont-exps cont1))
-        (vals (opt-cont-vals cont1)))
-    (let ((new-vals (cons v vals)))
-      (if (null? exps)
-          (eval/k (opt-apply opt (reverse new-vals)) (empty-env) cont)
-          (eval/k (car exps)
-                  env
-                  (opt-cont cont env opt (cdr exps) new-vals))))))
+(struct end-cont ())
+(define (apply-end-cont cont1 v)
+  (end-program "###Done!###" v))
 
-(struct arg-cont (cont env exps))
-(define (apply-arg-cont cont1 v)
-  (let ((cont (arg-cont-cont cont1))
-        (env (arg-cont-env cont1))
-        (exps (arg-cont-exps cont1)))
+(struct continuation (cont env data))
+
+(struct opt-data (opt exps vals))
+(define (opt-cont cont env opt exps vals)
+  (continuation cont env (opt-data opt exps vals)))
+
+(struct arg-data (exps))
+(define (arg-cont cont env exps)
+  (continuation cont env (arg-data exps)))
+
+(struct fun-data (fun exps vals))
+(define (fun-cont cont env fun exps vals)
+  (continuation cont env (fun-data fun exps vals)))
+
+(struct set-data (s))
+(define (set-cont cont env s)
+  (continuation cont env (set-data s)))
+
+(struct begin-data (exps))
+(define (begin-cont cont env exps)
+  (continuation cont env (begin-data exps)))
+
+(struct ccval-data (e))
+(define (ccval-cont cont env e)
+  (continuation cont env (ccval-data e)))
+
+(struct throw-data ())
+(define (throw-cont cont)
+  (continuation cont (empty-env) (throw-data)))
+
+(struct catch-data (s e))
+(define (catch-cont cont env s e)
+  (continuation cont env (catch-data s e)))
+
+(define (apply-continuation cont1 v)
+  (let ((cont (continuation-cont cont1))
+        (env (continuation-env cont1))
+        (data (continuation-data cont1)))
+    (cond
+     [(opt-data? data)
+      (let ((opt (opt-data-opt data))
+            (exps (opt-data-exps data))
+            (vals (opt-data-vals data)))
+        (apply-opt-cont cont env opt exps vals v))]
+     [(arg-data? data)
+      (let ((exps (arg-data-exps data)))
+        (apply-arg-cont cont env exps v))]
+     [(fun-data? data)
+      (let ((fun (fun-data-fun data))
+            (exps (fun-data-exps data))
+            (vals (fun-data-vals data)))
+        (apply-fun-cont cont env fun exps vals v))]
+     [(set-data? data)
+      (let ((s (set-data-s data)))
+        (apply-set-cont cont env s v))]
+     [(begin-data? data)
+      (let ((exps (begin-data-exps data)))
+        (apply-begin-cont cont env exps v))]
+     [(ccval-data? data)
+      (let ((e (ccval-data-e data)))
+        (apply-ccval-cont cont env e v))]
+     [(throw-data? data)
+      (apply-throw-cont cont v)]
+     [(catch-data? data)
+      (eval/k v (empty-env) cont)])))
+
+(define (apply-opt-cont cont env opt exps vals v)
+  (let ((new-vals (cons v vals)))
     (if (null? exps)
-        (proc-apply/k v '() cont)
-        (eval/k (car exps) env (fun-cont cont env v (cdr exps) '())))))
-
-(struct fun-cont (cont env fun exps vals))
-(define (apply-fun-cont cont1 v)
-  (let ((cont (fun-cont-cont cont1))
-        (env (fun-cont-env cont1))
-        (fun (fun-cont-fun cont1))
-        (exps (fun-cont-exps cont1))
-        (vals (fun-cont-vals cont1)))
-    (let ((new-vals (cons v vals)))
-      (if (null? exps)
-          (proc-apply/k fun (reverse new-vals) cont)
-          (eval/k (car exps)
-                  env
-                  (fun-cont cont env fun (cdr exps) new-vals))))))
-
-(struct set-cont (cont env s))
-(define (apply-set-cont cont1 v)
-  (let ((cont (set-cont-cont cont1))
-        (env (set-cont-env cont1))
-        (s (set-cont-s cont1)))
-    (setref! (apply-env-ref env s) v)
-    (eval/k (void) (empty-env) cont)))
-
-(struct begin-cont (cont env exps))
-(define (apply-begin-cont cont1 v)
-  (let ((cont (begin-cont-cont cont1))
-        (env (begin-cont-env cont1))
-        (exps (begin-cont-exps cont1)))
-    (if (null? exps)
-        (eval/k v (empty-env) cont)
+        (eval/k (opt-apply opt (reverse new-vals)) (empty-env) cont)
         (eval/k (car exps)
                 env
-                (begin-cont cont env (cdr exps))))))
+                (opt-cont cont env opt (cdr exps) new-vals)))))
 
-(define (cont-env cont)
-  (cond
-   [(opt-cont? cont) (opt-cont-env cont)]
-   [(arg-cont? cont) (arg-cont-env cont)]
-   [(fun-cont? cont) (fun-cont-env cont)]
-   [(set-cont? cont) (set-cont-env cont)]
-   [(begin-cont? cont) (begin-cont-env cont)]))
+(define (apply-arg-cont cont env exps v)
+  (if (null? exps)
+      (proc-apply/k v '() cont)
+      (eval/k (car exps) env (fun-cont cont env v (cdr exps) '()))))
 
-(define (cont-cont cont)
-  (cond
-   [(opt-cont? cont) (opt-cont-cont cont)]
-   [(arg-cont? cont) (arg-cont-cont cont)]
-   [(fun-cont? cont) (fun-cont-cont cont)]
-   [(set-cont? cont) (set-cont-cont cont)]
-   [(begin-cont? cont) (begin-cont-cont cont)]))
+(define (apply-fun-cont cont env fun exps vals v)
+  (let ((new-vals (cons v vals)))
+    (if (null? exps)
+        (proc-apply/k fun (reverse new-vals) cont)
+        (eval/k (car exps)
+                env
+                (fun-cont cont env fun (cdr exps) new-vals)))))
+
+(define (apply-set-cont cont env s v)
+  (setref! (apply-env-ref env s) v)
+  (eval/k (void) (empty-env) cont))
+
+(define (apply-begin-cont cont env exps v)
+  (if (null? exps)
+      (eval/k v (empty-env) cont)
+      (eval/k (car exps)
+              env
+              (begin-cont cont env (cdr exps)))))
+
+(define (apply-ccval-cont cont env e v)
+  (eval/k e env v))
+
+(define (apply-throw-cont cont v)
+  (define (catch-cont? cont)
+    (catch-data? (continuation-data cont)))
+  (if (end-cont? cont)
+      (end-program "###Error!###" v)
+      (let ((data (continuation-data cont)))
+        (if (catch-data? data)
+            (let ((s (catch-data-s data))
+                  (e (catch-data-e data)))
+              (eval/k e (extend-env (continuation-env cont) s v) cont))
+            (apply-throw-cont (continuation-cont cont) v)))))
 ;
 
 (define (opt-apply opt vals) (apply (cadr opt) vals))
@@ -286,8 +343,8 @@
     (if (end-cont? cont)
         (void)
         (begin
-          (mark-env (cont-env cont))
-          (mark-cont (cont-cont cont)))))
+          (mark-env (continuation-env cont))
+          (mark-cont (continuation-cont cont)))))
   (define (set-free-list!)
     (define (whites ref)
       (if (< ref 0)

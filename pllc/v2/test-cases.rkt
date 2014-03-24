@@ -46,6 +46,31 @@
        (c 3))
    (+ a b c))) 30
 
+(let ((x 7))
+  (+
+   (let ((a 2)
+         (b 3)
+         (c 4))
+     (* a b c))
+   (let ((a 1)
+         (b 2)
+         (c 3))
+     (+ a b c))
+   x)) 37
+
 ))
 
 (define test-ceks (append test-cek test-ceks1))
+
+(define test-cekhs1
+  '(
+
+(+ 1 (letcc x (+ (lambda (y) y) (cc x 12)))) 13
+
+((lambda (x) x) (throw 1)) 1
+
+(catch (+ 1 (throw 12)) with x (+ 2 x)) 14
+
+))
+
+(define test-cekhs (append test-ceks test-cekhs1))
