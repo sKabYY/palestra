@@ -65,6 +65,26 @@
 (define test-cekhs1
   '(
 
+(if (iszero 1) 1 2) 2
+
+(if (iszero (let ((x 2)
+                  (y 2))
+              (- x y)))
+    (+ 22 11)
+    (lambda (y) y)) 33
+
+(let ((f (lambda (p n)
+           (if (iszero n)
+               0
+               (+ 2 (p p (- n 1)))))))
+  (f f 4)) 8
+
+(let ((f (lambda (p acc n)
+           (if (iszero n)
+               acc
+               (p p (+ acc 2) (- n 1))))))
+  (f f 0 14)) 28
+
 (+ 1 (letcc x (+ (lambda (y) y) (cc x 12)))) 13
 
 ((lambda (x) x) (throw 1)) 1

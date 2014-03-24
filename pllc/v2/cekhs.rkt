@@ -11,6 +11,7 @@
 ;            | Number
 ;            | (lambda (Symbol*) Expression)
 ;            | (Expression Expression*)
+;            | (if Expression Expression)
 ;            | (set! Symbol Expression)
 ;            | (letcc Symbol Expression)
 ;            | (cc Expression Expression)
@@ -58,6 +59,9 @@
     ; a let statement
     [`(let ,defs ,e1)
      (translate-let defs e1)]
+    ; an if statement
+    [`(if ,e1 ,e2 ,e3)
+     `(if ,(translation-of e1) ,(translation-of e2) ,(translation-of e3))]
     ; an assignment
     [`(set! ,s ,e1)
      `(set! ,s ,(translation-of e1))]
@@ -115,6 +119,8 @@
     ; a procedure
     [`(lambda ,as ,b)
      (eval/k (make-closure as b env) (empty-env) cont)]
+    [`(if ,e1 ,e2 ,e3)
+     (eval/k e1 env (if-cont cont env e2 e3))]
     ; an assignment
     [`(set! ,s ,e1)
      (eval/k e1 env (set-cont cont env s))]
@@ -171,6 +177,10 @@
 (define (fun-cont cont env fun exps vals)
   (continuation cont env (fun-data fun exps vals)))
 
+(struct if-data (then-exp else-exp))
+(define (if-cont cont env then-exp else-exp)
+  (continuation cont env (if-data then-exp else-exp)))
+
 (struct set-data (s))
 (define (set-cont cont env s)
   (continuation cont env (set-data s)))
@@ -209,6 +219,10 @@
             (exps (fun-data-exps data))
             (vals (fun-data-vals data)))
         (apply-fun-cont cont env fun exps vals v))]
+     [(if-data? data)
+      (let ((then-exp (if-data-then-exp data))
+            (else-exp (if-data-else-exp data)))
+        (apply-if-cont cont env then-exp else-exp v))]
      [(set-data? data)
       (let ((s (set-data-s data)))
         (apply-set-cont cont env s v))]
@@ -243,6 +257,12 @@
         (eval/k (car exps)
                 env
                 (fun-cont cont env fun (cdr exps) new-vals)))))
+
+(define (apply-if-cont cont env then-exp else-exp v)
+  (define (true? v) v)
+  (if (true? v)
+      (eval/k then-exp env cont)
+      (eval/k else-exp env cont)))
 
 (define (apply-set-cont cont env s v)
   (setref! (apply-env-ref env s) v)
