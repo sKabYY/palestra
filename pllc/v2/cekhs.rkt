@@ -58,10 +58,25 @@
     ; a let statement
     [`(let ,defs ,e1)
      (translate-let defs e1)]
+    ; an assignment
     [`(set! ,s ,e1)
      `(set! ,s ,(translation-of e1))]
+    ; a begin statement
     [`(begin ,exps)
      `(begin ,(map translation-of exps))]
+    ; a letcc statement
+    [`(letcc ,s ,e1)
+     `(letcc ,s ,(translation-of e1))]
+    ; a cc statement
+    [`(cc ,e1 ,e2)
+     `(cc ,(translation-of e1) ,(translation-of e2))]
+    ; a throw statement
+    [`(throw ,e1)
+     `(throw ,(translation-of e1))]
+    ; a catch statement
+    [`(catch ,e1 with ,s ,e2)
+     `(catch ,(translation-of e1) with ,s ,(translation-of e2))]
+    ; an application
     [`(,e1 . ,exps)
      (cons (translation-of e1)
            (map translation-of exps))]

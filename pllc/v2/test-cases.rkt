@@ -69,7 +69,12 @@
 
 ((lambda (x) x) (throw 1)) 1
 
-(catch (+ 1 (throw 12)) with x (+ 2 x)) 14
+(catch
+ (let ((a 1))
+   (+ a (throw 12)))
+ with x
+ (let ((a 2))
+   (+ a x))) 14
 
 ))
 
