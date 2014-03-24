@@ -36,6 +36,16 @@
 (let ((a 12) (b 3)) (+ a b)) 15
 (let ((x 0)) (begin (set! x 1) x)) 1
 
+(+
+ (let ((a 2)
+       (b 3)
+       (c 4))
+   (* a b c))
+ (let ((a 1)
+       (b 2)
+       (c 3))
+   (+ a b c))) 30
+
 ))
 
 (define test-ceks (append test-cek test-ceks1))
