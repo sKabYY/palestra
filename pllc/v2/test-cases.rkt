@@ -67,11 +67,19 @@
 
 (if (iszero 1) 1 2) 2
 
-(if (iszero (let ((x 2)
-                  (y 2))
-              (- x y)))
-    (+ 22 11)
-    (lambda (y) y)) 33
+(let ((y 11))
+  (if (iszero (let ((x 2)
+                    (y 2))
+                (- x y)))
+      (+ y 22)
+      (lambda (y) y))) 33
+
+(let ((y 11))
+  ((iszero (let ((x 2)
+                 (y 2))
+             (- x y)))
+   (+ y 22)
+   (lambda (y) y))) 33
 
 (let ((f (lambda (p n)
            (if (iszero n)

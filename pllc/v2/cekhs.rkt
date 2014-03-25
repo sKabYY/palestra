@@ -56,12 +56,12 @@
     ; a procedure
     [`(lambda ,as ,b)
      `(lambda ,as ,(translation-of b))]
-    ; a let statement
+    ; a let statement --
     [`(let ,defs ,e1)
      (translate-let defs e1)]
-    ; an if statement
+    ; an if statement --
     [`(if ,e1 ,e2 ,e3)
-     `(if ,(translation-of e1) ,(translation-of e2) ,(translation-of e3))]
+     `(,(translation-of e1) ,(translation-of e2) ,(translation-of e3))]
     ; an assignment
     [`(set! ,s ,e1)
      `(set! ,s ,(translation-of e1))]
@@ -118,9 +118,7 @@
      (apply-cont cont (apply-env env s))]
     ; a procedure
     [`(lambda ,as ,b)
-     (eval/k (make-closure as b env) (empty-env) cont)]
-    [`(if ,e1 ,e2 ,e3)
-     (eval/k e1 env (if-cont cont env e2 e3))]
+     (eval/k (closure as b env) (empty-env) cont)]
     ; an assignment
     [`(set! ,s ,e1)
      (eval/k e1 env (set-cont cont env s))]
@@ -150,15 +148,16 @@
                        (opt-cont cont env p (cdr exps) '())))
            (eval/k e1 env (arg-cont cont env exps))))]))
 
-; continuation ;;;
+(define (true? v) (if v #t #f))
 
-;
+; continuation ;;;
 
 (define (end-program msg v)
   (printf "store: ~a~n" the-store)
   (displayln msg)
   v)
 
+;
 (struct end-cont ())
 (define (apply-end-cont cont1 v)
   (end-program "###Done!###" v))
@@ -176,10 +175,6 @@
 (struct fun-data (fun exps vals))
 (define (fun-cont cont env fun exps vals)
   (continuation cont env (fun-data fun exps vals)))
-
-(struct if-data (then-exp else-exp))
-(define (if-cont cont env then-exp else-exp)
-  (continuation cont env (if-data then-exp else-exp)))
 
 (struct set-data (s))
 (define (set-cont cont env s)
@@ -219,10 +214,6 @@
             (exps (fun-data-exps data))
             (vals (fun-data-vals data)))
         (apply-fun-cont cont env fun exps vals v))]
-     [(if-data? data)
-      (let ((then-exp (if-data-then-exp data))
-            (else-exp (if-data-else-exp data)))
-        (apply-if-cont cont env then-exp else-exp v))]
      [(set-data? data)
       (let ((s (set-data-s data)))
         (apply-set-cont cont env s v))]
@@ -246,9 +237,13 @@
                 (opt-cont cont env opt (cdr exps) new-vals)))))
 
 (define (apply-arg-cont cont env exps v)
-  (if (null? exps)
-      (proc-apply/k v '() cont)
-      (eval/k (car exps) env (fun-cont cont env v (cdr exps) '()))))
+  (if (boolean? v)
+      (if v
+          (eval/k (car exps) env cont)
+          (eval/k (cadr exps) env cont))
+      (if (null? exps)
+          (proc-apply/k v '() cont)
+          (eval/k (car exps) env (fun-cont cont env v (cdr exps) '())))))
 
 (define (apply-fun-cont cont env fun exps vals v)
   (let ((new-vals (cons v vals)))
@@ -257,12 +252,6 @@
         (eval/k (car exps)
                 env
                 (fun-cont cont env fun (cdr exps) new-vals)))))
-
-(define (apply-if-cont cont env then-exp else-exp v)
-  (define (true? v) v)
-  (if (true? v)
-      (eval/k then-exp env cont)
-      (eval/k else-exp env cont)))
 
 (define (apply-set-cont cont env s v)
   (setref! (apply-env-ref env s) v)
@@ -314,9 +303,6 @@
 ; closure ;;;
 
 (struct closure (vars body env))
-
-(define (make-closure vars body env)
-  (closure vars body env))
 
 (define (proc-apply/k clo vals cont)
   (let ((vars (closure-vars clo))
