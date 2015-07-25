@@ -26,7 +26,7 @@
                  (lambda ()
                    (set! n (+ n 1))
                    (mkvar (number->string n)))))
-           (end-cont (mkvar "end-cont"))
+           (end-cont `(lambda (v) v))
            (>>
             (lambda (expr cont)
               (match expr
