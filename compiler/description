@@ -1,0 +1,57 @@
+Macro:
+---
+
+(func (Variable*) Expression)
+= (func (V1) (func (V2) ... Expression ))
+
+(let ((Variable Expression)*) Expression)
+= ((((func (Variable*) Expression) Expression) Expression) ... )
+
+
+Expr:
+---
+
+Expression = Variable
+           | Number
+           | Boolean
+           | (func (Variable) Expression)
+           | (if Expression Expression Expression)
+           | (- Expression Expression)
+           | (zero? Expression)
+           | (Expression Expression)
+
+
+CPS:
+---
+
+SpExpr = Variable
+       | Number
+       | Boolean
+       | (func (Variable) TfExpr)
+
+TfExpr = (if SpExpr TfExpr TfExpr)
+       | (-/k SpExpr SpExpr Cont)
+       | (zero?/k SpExpr Cont)
+       | ((SpExpr SpExpr) Cont)
+       | (Cont SpExpr)
+
+Cont = Variable
+     | (func (Variable) TfExpr)
+
+IR:
+---
+
+Program = Block*
+
+Block = (Label Instr*)
+
+Instr = (mov Reg|Number Reg)
+      | (jmp Reg|Label)
+      | (cbr Reg Label Label)
+      | (sub Reg|Number Reg|Number Reg)
+      | (zero? Reg|Number)
+
+Label = Symbol
+Reg = (reg Number)
+
+TODO: closure?
