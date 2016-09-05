@@ -1,0 +1,39 @@
+;;; Grammer
+
+Program = ((main Statement*) FuncDecl*)
+
+FuncDecl = (defun (Type Variable (Type Variable)*)
+             (Statement*))
+
+Statement = (seq Statement*)
+          | (array-set! Expr Expr Expr)  ; (array-set! arr idx val)
+          | (if Expr Statement Statement)
+          | (while Expr Statement*)
+          | (var Variable Expr)
+          | (set! Variable Expr)
+          | (output Expr)
+          | (return Expr)
+
+Expr = Integer | Boolean
+     | (array Expr Expr)  ; (array num val)
+     | (array-length Expr)
+     | (array-ref Expr Expr)  ; (array-ref arr idx)
+     | Variable
+     | (Op Expr Expr)
+     | (not Expr)
+     | (Expr Expr*)
+
+Type = int
+     | bool
+     | (array Type)
+     | void
+
+
+Op = + | - | * | div | mod | = | > | < | >= | <=
+
+;;; Data
+Type of variable:
+    int: <integer>
+    bool: <boolean>
+    array: <array Type>
+    function: <function RetType ArgTypes>

@@ -41,6 +41,24 @@ Cont = Variable
 IR:
 ---
 
+Expr = (number Number)
+     | (boolean Boolean)
+     | (label Symbol) ; Label
+     | (temp Symbol) ; Temp
+     | (mem Expr) ; Mem
+     | (- Expr Expr)
+     | (app Closure Expr*)
+     | (eseq Stmn Expr)
+
+Stmn = (move Temp|Mem)
+     | (expr Expr)
+     | (jump Temp|Mem|Label)
+     | (cjump Expr Temp|Mem|Label Temp|Mem|Label)
+     | (seq Stmn*)
+     | (deflabel Symbol)
+
+Closure = (closure Label Env)
+
 Program = Block*
 
 Block = (Label Instr*)

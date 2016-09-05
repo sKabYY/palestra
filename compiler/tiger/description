@@ -1,0 +1,54 @@
+;;; Grammer
+
+;; Scan
+
+Variable: char*
+Integer: \d+
+Boolean: true | false
+
+
+;; Parse
+
+Program ::= FuncDef* main StatementBlock
+StatementBlock ::= { Statement* }
+
+FuncDef ::= ReturnType Variable(DefParams) StatementBlock
+DefParams ::= Empty | Type Variable | Type Variable, DefParams
+
+Statement ::= StatementBlock
+            | Empty;
+            | var Variable = Expr;
+            | Variable = Expr;
+            | if Expr Statement
+            | if Expr Statement else Statement
+            | while Expr Statement
+            | return Expr?;
+            | return;
+            | Expr[Expr] = Expr;
+            | (output Expr);
+
+Expr ::= Integer | Boolean
+       | Variable
+       | Type[Expr]
+       | Expr[Expr]
+       | BinOp(Expr, Expr)
+       | and(Expr, Expr)
+       | or(Expr, Expr)
+       ;| if Expr Expr else Expr
+       ;| { Statement* Expr }
+       | UniOp(Expr)
+       | (Expr+)
+
+Type ::= int | bool | Type[]
+ReturnType = void | Type
+
+BinOp ::= + | - | * | div | mod | = | > | < | >= | <=
+UniOp ::= not | arrlen
+
+
+;;; Data
+Type of variable:
+    int: <integer>
+    bool: <boolean>
+    array: <array Type>
+    function: <function RetType ArgTypes>
