@@ -7,7 +7,7 @@
 #define SCHEME_ENTRY _scheme_entry
 #endif
 
-extern long scheme_entry(void);
+extern long SCHEME_ENTRY(void);
 
 void
 print(long x) {
