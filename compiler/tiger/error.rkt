@@ -6,6 +6,11 @@
 
 (struct error:parse error:base ())
 
+(struct error:check error:base ())
+(struct error:return-outside-function error:check ())
+(struct error:unbound error:check ())
+(struct error:argsnum-not-match error:check ())
+
 (struct error:interp error:base ())
 (struct error:return-outside-function error:interp ())
 (struct error:unbound error:interp ())

@@ -346,13 +346,12 @@
 (define (comb ps)
   (lambda ()
     (lambda (toks stk)
-      (let loop ([ps ps] [toks toks] [nodes '()])
+      (let loop ([ps ps] [toks toks] [acc '()])
         (if (null? ps)
-            (values (append-nodes (reverse nodes))
-                    toks)
+            (values acc toks)
             (let-values ([(t r) (apply-check (car ps) toks stk)])
               (if t
-                  (loop (cdr ps) r (cons t nodes))
+                  (loop (cdr ps) r (append acc t))
                   (values #f r))))))))
 
 
@@ -369,10 +368,10 @@
                (tok-pos-info toks))
         (let-values ([(t r) ((parser) toks stk)])
           (if t
-              (values (new-node type
-                                t
-                                (token-start (car toks))
-                                (token-start (car r)))
+              (values (list (new-node type
+                                      t
+                                      (token-start (car toks))
+                                      (token-start (car r))))
                       r)
               (values #f r)))))))
 
@@ -399,8 +398,8 @@
         (let loop ([toks toks] [acc '()])
           (let-values ([(t r) ((parser) toks stk)])
             (if t
-                (loop r (cons t acc))
-                (values (apply append (reverse acc)) toks))))))))
+                (loop r (append acc t))
+                (values acc toks))))))))
 
 
 (define (@+ . ps)
@@ -443,7 +442,7 @@
             (let ([type [token-type tok]]
                   [text (token-text tok)])
               (if (pred? type text)
-                  (values text (cdr toks))
+                  (values (list text) (cdr toks))
                   (values #f toks))))))))
 
 
@@ -484,7 +483,7 @@
   (::cache name (@... ps ...)))
 
 
-(define-syntax-rule (::= type name ps ...)
+(define-syntax-rule (::= name type ps ...)
   (::cache name (@= type ps ...)))
 
 

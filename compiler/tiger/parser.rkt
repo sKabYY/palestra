@@ -35,13 +35,13 @@
 (:: |,| ($_ ","))
 (:: |=| ($_ "="))
 
-(::= 'program $program
+(::= $program 'program
      (@or $main  ; reduce trying times
           (@... (@* $function-definition) $main)))
 
 (:: $main ($_ "main") $statement)
 
-(::= 'fundef $function-definition
+(::= $function-definition 'fundef
      $return-type $identifier
      (@= 'parameters |(| (@.@ $type $identifier |,|) |)|)
      $statement)
@@ -62,7 +62,7 @@
     (@or $arrayref-expression
          $simple-expression))
 
-(::= 'arrayref $arrayref-expression
+(::= $arrayref-expression 'arrayref
     $simple-expression (@+ |[| $expression |]|))
 
 (:: $simple-expression
@@ -87,7 +87,7 @@
     (@or (@= 'integer-type ($_ "int"))
          (@= 'boolean-type ($_ "bool"))))
 
-(::= 'id $identifier
+(::= $identifier 'id
      ($pred (lambda (type text)
               (and (symbol=? type 'token)
                    (not (memq text delims))))))

@@ -23,7 +23,6 @@ Statement ::= StatementBlock
             | if Expr Statement else Statement
             | while Expr Statement
             | return Expr?;
-            | return;
             | Expr[Expr] = Expr;
             | (output Expr);
 
