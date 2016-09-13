@@ -38,59 +38,58 @@
           (string->number (substring fvar-str 2 (string-length fvar-str)))
           #f)))
 
-  (define (tail<= tail)
+  (define (Tail tail)
     (match tail
-      [(begin ,effect* ... ,tl)
-       `(begin ,@(map effect<= effect*) ,(tail<= tl))]
-      [(,triv) `(,(triv<= triv))]))
+      [(begin ,[Effect -> effect*] ... ,[tl])
+       `(begin ,@effect* ,tl)]
+      [(,[Triv -> triv]) `(,triv)]))
 
-  (define (effect<= effect)
+  (define (Effect effect)
     (match effect
-      [(set! ,var (,binop ,triv1 ,triv2))
-       `(set! ,(var<= var) (,binop ,(triv<= triv1) ,(triv<= triv2)))]
-      [(set! ,var ,triv)
-       `(set! ,(var<= var) ,(triv<= triv))]))
+      [(set! ,[Var -> var] (,binop ,[Triv -> triv1] ,[Triv -> triv2]))
+       `(set! ,var (,binop ,triv1 ,triv2))]
+      [(set! ,[Var -> var] ,[Triv -> triv])
+       `(set! ,var ,triv)]))
 
-  (define (triv<= triv)  ; TODO: label
+  (define (Triv triv)  ; TODO: label
     (if (integer? triv)
         triv
-        (var<= triv)))
+        (Var triv)))
 
-  (define (var<= var)
+  (define (Var var)
     (cond
       [(frame-var->index var)
        => (lambda (idx) (make-disp-opnd 'rbp (* idx BYTES-OF-WORD)))]
       [else var]))
 
+  (define (Dec dec)
+    (match dec
+      [(,label (lambda () ,[Tail -> tail]))
+       `(,label (lambda () ,tail))]))
+
   (match pgm
-    [(letrec (,dec* ...) ,tail)
-     `(letrec ,(map (lambda (dec)
-                      (match dec
-                        [(,label (lambda () ,tl))
-                         `(,label (lambda () ,(tail<= tl)))]))
-                    dec*)
-        ,(tail<= tail))]))
+    [(letrec (,[Dec -> dec*] ...) ,[Tail -> tail])
+     `(letrec ,dec* ,tail)]))
 
 (define (flatten-program pgm)
 
-  (define (tail<= tail)
+  (define (Tail tail)
     (match tail
-      [(begin ,effect* ... ,tl)
-       (append effect* (tail<= tl))]
+      [(begin ,[Effect -> effect*] ... ,[tl])
+       `(,@effect* ,@tl)]
       [(,triv) `((jump ,triv))]))
 
-  (define (effect<= effect) effect)
+  (define (Effect effect) effect)
 
+  (define (Dec dec)
+    (match dec
+      [(,label (lambda () ,[Tail -> tail]))
+       (cons label tail)]))
+
+  ; TODO: Don't use append!
   (match pgm
-    [(letrec (,dec* ...) ,tail)
-     `(code ,@(tail<= tail)
-            ,@(fold-left (lambda (acc dec)
-                           (append acc
-                                   (match dec
-                                     [(,label (lambda () ,tl))
-                                      (cons label (tail<= tl))])))
-                         '()
-                         dec*))]))
+    [(letrec (,[Dec -> dec*] ...) ,[Tail -> tail])
+     `(code ,@tail ,@(apply append dec*))]))
 
 ; generator-x86-64
 
@@ -104,12 +103,11 @@
     (define op-map '((+ . addq)
                      (- . subq)
                      (* . imulq)))
-    (let* ([triv<= rand->x86-64-arg]
-           [binop-lookup (lambda (binop)
-                           (cond
-                             [(assq binop op-map) => cdr]
-                             [else (error 'binop-lookup
-                                          "unsupported binop: ~a" binop)]))])
+    (let ([binop-lookup (lambda (binop)
+                          (cond
+                            [(assq binop op-map) => cdr]
+                            [else (error 'binop-lookup
+                                         "unsupported binop: ~a" binop)]))])
       (match stm
         [(set! ,var (,binop ,var ,triv))
          (emit (binop-lookup binop) triv var)]
@@ -140,6 +138,10 @@
                               (set! fv0 rax)
                               (set! rax (+ rax rax))
                               (set! rax (+ rax fv0))
+                              (r15)))]
+                     [f$2 (lambda ()
+                            (begin
+                              (set! rax 42)
                               (r15)))])
               (begin
                 (set! rax 17)
