@@ -28,3 +28,6 @@
 
 # local files
 _local_*
+
+# Mac OSX
+.DS_Store
