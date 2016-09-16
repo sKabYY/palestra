@@ -288,7 +288,10 @@
       (match stm
         [(set! ,var (,binop ,var ,triv))
          (emit (binop-lookup binop) triv var)]
-        [(set! ,var ,triv) (emit 'movq triv var)]
+        [(set! ,var ,triv)
+         (if (label? triv)
+             (emit 'leaq triv var)
+             (emit 'movq triv var))]
         [(if (,relop ,triv1 ,triv2) (jump ,label))
          (emit 'cmpq triv2 triv1)
          (emit-jump (relop-lookup relop #t) label)]
@@ -338,7 +341,7 @@
                                           (if (= rax 0) (set! y.2 (+ y.2 1)) (nop))
                                           (set! x.1 (sra x.1 1))
                                           (f$1)))))])
-              (locate () (begin (set! r8 3) (set! r9 10) (f$1))))])
+              (locate () (begin (set! r8 3) (set! r9 10) (set! r14 f$1) (r14))))])
   (printf "source: ~n")
   (pretty-print pgm)
   (printf "~n~n")
