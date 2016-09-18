@@ -97,7 +97,7 @@
        `(begin ,effect* ... ,pd)]
       [(if ,[pd0] ,[pd1] ,[pd2])
        `(if ,pd0 ,pd1 ,pd2)]
-      [(,relop ,[Triv -> triv1] [Triv -> triv2])
+      [(,relop ,[Triv -> triv1] ,[Triv -> triv2])
        `(,relop ,triv1 ,triv2)]
       [,x x]))
 
