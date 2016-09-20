@@ -52,12 +52,12 @@
 (define (uncover-register-conflict pgm)
 
   (define (uncover tail)
-    (define conflict '())
+    (define conflicts '())
     (define (add-conflict var live*)
-      (let ([ass (assq var conflict)])
+      (let ([ass (assq var conflicts)])
         (if ass
             (set-cdr! ass (union live* (cdr ass)))
-            (set! conflict (cons (cons var live*) conflict)))))
+            (set! conflicts (cons (cons var live*) conflicts)))))
 
     (define (Triv triv)
       (if (or (uvar? triv) (register? triv) (frame-var? triv))
@@ -97,9 +97,24 @@
         (unless (null? uvar*)
           (error 'check-live-set "uninitialized var" uvar*))))
 
+    (define (normalize conflicts)
+      (let loop ([conflicts conflicts] [acc '()])
+        (if (null? conflicts)
+            (reverse acc)
+            (let* ([conflict (car conflicts)]
+                   [rst (cdr conflicts)]
+                   [var (car conflict)])
+              (let-values ([(vars locs) (partition (lambda (v)
+                                                     (and (uvar? v) (assq v rst)))
+                                                   (cdr conflict))])
+                (for-each (lambda (v)
+                            (add-conflict v (list var)))
+                          vars)
+                (loop rst (cons (cons var locs) acc)))))))
+
     (begin
       (check-live-set (live-analysis tail '() #f))
-      conflict))
+      (normalize conflicts)))
 
   (define (Body body)
     (match body
@@ -224,7 +239,7 @@
        `(begin ,effect* ... ,pd)]
       [(if ,[pd0] ,[pd1] ,[pd2])
        `(if ,pd0 ,pd1 ,pd2)]
-      [(,relop ,[Triv -> triv1] [Triv -> triv2])
+      [(,relop ,[Triv -> triv1] ,[Triv -> triv2])
        `(,relop ,triv1 ,triv2)]
       [,x x]))
 
@@ -461,23 +476,35 @@
    generate-x86-64
    ))
 
-(let ([pgm '(letrec ()
-              (locals (a.1 b.2 c.3 d.4 e.5 x.6 y.7 z.8)
-                      (begin
-                        (set! r8 99)
-                        (set! a.1 r8)
-                        (set! b.2 fv0)
-                        (set! c.3 (+ a.1 2))
-                        (if (< c.3 0) (nop) (set! c.3 (+ c.3 b.2)))
-                        (set! x.6 0)
-                        (set! y.7 0)
-                        (if (if (= c.3 1)
-                                (begin (set! e.5 0) (false))
-                                (begin (set! z.8 0) (= c.3 1)))
-                            (set! d.4 y.7)
-                            (set! d.4 x.6))
-                        (set! rax (+ c.3 1))
-                        (r15 rax rbp))))])
+(define test1 '(letrec ()
+                 (locals (a.1 b.2 c.3 d.4 e.5 x.6 y.7 z.8)
+                         (begin
+                           (set! r8 99)
+                           (set! a.1 r8)
+                           (set! b.2 fv0)
+                           (set! c.3 (+ a.1 2))
+                           (if (< c.3 0) (nop) (set! c.3 (+ c.3 b.2)))
+                           (set! x.6 0)
+                           (set! y.7 0)
+                           (if (if (= c.3 1)
+                                   (begin (set! e.5 0) (false))
+                                   (begin (set! z.8 0) (= c.3 1)))
+                               (set! d.4 y.7)
+                               (set! d.4 x.6))
+                           (set! rax (+ c.3 1))
+                           (r15 rax rbp)))))
+
+(define test2 '(letrec ()
+                 (locals (a.1 b.2 c.3)
+                         (begin
+                           (set! c.3 3)
+                           (set! a.1 1)
+                           (set! b.2 c.3)
+                           (set! c.3 3)
+                           (set! rax a.1)
+                           (r15 rax rbp)))))
+
+(let ([pgm test2])
   (printf "source: ~n")
   (pretty-print pgm)
   (printf "~n~n")
