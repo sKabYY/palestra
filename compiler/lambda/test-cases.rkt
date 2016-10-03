@@ -54,6 +54,7 @@
 (zero? 1) #f
 (if (zero? 0) 1 2) 1
 (if (zero? 1) 1 2) 2
+(- 3 (if (zero? 0) 1 2)) 2
 
 ((func (f) ((f f) 3))
  (func (p)

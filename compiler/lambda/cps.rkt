@@ -35,8 +35,11 @@
                          (if (memq ctx (list ctx0 id))
                              `(if ,t ,(cps1 conseq ctx) ,(cps1 alt ctx))
                              (let ((u (fv)))
-                               `(let ((k (lambda (,u) ,(ctx u))))
-                                  (if ,t ,(cps1 conseq ctx0) ,(cps1 alt ctx0)))))))]
+                               `((func (,vk)
+                                       (if ,t
+                                           ,(cps1 conseq ctx0)
+                                           ,(cps1 alt ctx0)))
+                                 (func (,u) ,(ctx u)))))))]
                 [`(func (,x) ,body)
                  (ctx `(func (,x) (func (,vk) ,(cps1 body ctx0))))]
                 [`(- ,a ,b)

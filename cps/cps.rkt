@@ -3,7 +3,9 @@
                       cps-v0*
                       cps-v1
                       cps-v2
-                      cps-v2*])
+                      cps-v2*
+                      cpsx-v0
+                      cpsx-v1])
 
 ; Expression = Variable
 ;            | (lambda (Variable) Expression)
@@ -136,3 +138,44 @@
                                                   vk
                                                   `(lambda (,v0) ,(k v0))))))))))]))))
     ((>> expr) (lambda (e) `(lambda (,vk) (,vk ,e))))))
+
+; Expression = Variable
+;            | (lambda (Variable) Expression)
+;            | (Expression Expression)
+;
+; CPS:
+; ---
+; SpExpr = Variable
+;        | (lambda (Variable Variable) TfExpr)
+; TfExpr = (SpExpr SpExpr Cont)
+;        | (Cont SpExpr)
+; Cont = (lambda (Variable) TfExpr)
+
+(define (cpsx-v0 expr)
+  (letrec ([k (mkvar "k")]
+           [>>
+            (lambda (expr C)
+              (match expr
+                [(? symbol? s) `(,C ,s)]
+                [`(lambda (,a) ,body)
+                 `(,C (lambda (,a ,k) ,(>> body k)))]
+                [`(,e1 ,e2)
+                 (>> e1 `(lambda (v1)
+                           ,(>> e2 `(lambda (v2)
+                                      (v1 v2 ,C)))))]))])
+    (>> expr `(lambda (v) v))))
+
+(define (cpsx-v1 expr)
+  (letrec ([k (mkvar "k")]
+           [>>
+            (lambda (expr C)
+              (match expr
+                [(? symbol? s) (C s)]
+                [`(lambda (,a) ,body)
+                 (C `(lambda (,a ,k)
+                       ,(>> body (lambda (v) `(,k ,v)))))]
+                [`(,e1 ,e2)
+                 (>> e1 (lambda (v1)
+                          (>> e2 (lambda (v2)
+                                   `(,v1 ,v2 ,(C `(lambda (v) v)))))))]))])
+    (>> expr (lambda (v) v))))
