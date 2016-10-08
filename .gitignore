@@ -29,5 +29,8 @@
 # local files
 _local_*
 
+# debug info
+*.dSYM
+
 # Mac OSX
 .DS_Store
