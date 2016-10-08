@@ -30,10 +30,6 @@
 ; binop -> + | - | * | sra | logand | logor
 ; relop -> = | > | < | >= | <=
 ;
-; value-prim -> binop | alloc | mref
-; pred-prim -> relop
-; effect-prim -> mset!
-;
 
 (case-sensitive #t)
 
@@ -78,16 +74,6 @@
 
 (define (relop? x)
   (memq x '(= > < >= <=)))
-
-(define (value-prim? x)
-  (or (binop? x) (memq x '(alloc mref))))
-
-(define pred-prim? relop?)
-
-(define (effect-prim? x) (eq? x 'mset!))
-
-(define (prim? x)
-  (or (value-prim? x) (pred-prim? x) (effect-prim? x)))
 
 (define (triv? v)
   (or (uvar? v) (number? v) (label? v)))
@@ -326,7 +312,7 @@
 ;    | (if E E E)
 ;    | (begin E* E)
 ;    | (set! uvar E)
-;    | (mset! E E E)  ; TODO
+;    | (mset! E E E)
 ;    | (nop)
 ;    | (true)
 ;    | (false)
@@ -336,7 +322,8 @@
 ; F[X] -> (if P X X)
 ;       | (begin E* X)
 ; T -> Triv
-;    | (value-prim Triv*)
+;    | (binop Triv Triv)
+;    | (mref Triv Triv)
 ;    | (Triv Triv*)
 ;    | F[T]
 ; E -> (nop)
@@ -416,11 +403,12 @@
                     (with-u (lambda (u)
                               `(set! ,u ,value))
                       ctx)))))]
-          [(,prim ,[(rm 'app) -> v*] ...) (guard (prim? prim))
+          [(,op ,[(rm 'app) -> v*] ...)
+           (guard (or (binop? op) (relop? op)))
            (lambda (ctx)
              (let loop ([v* v*] [s* '()])
                (if (null? v*)
-                   (let ([value `(,prim ,(reverse s*) ...)])
+                   (let ([value `(,op ,(reverse s*) ...)])
                      (if (memq ct '(tail rhs test))
                          (ctx value)
                          (with-u (lambda (u)
@@ -522,8 +510,8 @@
         [(false) '(false)]
         [(,relop ,triv1 ,triv2) (guard (relop? relop))
          `(,relop ,triv1 ,triv2)]
-        [(,prim ,triv* ...) (guard (prim? prim))
-         (make-ret `(,prim ,triv* ...))]
+        [(,op ,triv* ...) (guard (or (eq? op 'mref) (binop? op)))
+         (make-ret `(,op ,triv* ...))]
         [(,rator ,rand* ...)
          (let ([loc* (alloc-loc* (length rand*))])
            `(begin
