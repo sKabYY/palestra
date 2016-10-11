@@ -8,4 +8,4 @@ _local_t.s: compiler.ss
 	scheme --script compiler.ss
 
 clean:
-	rm -r _local_t.s a.out a.out.dSYM
+	rm -rf _local_t.s a.out a.out.dSYM

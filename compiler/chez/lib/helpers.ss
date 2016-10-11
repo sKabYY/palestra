@@ -213,7 +213,7 @@
          r13 r14 r15 heap-size stack-size $check-heap-overflow mref mset!
 	 reset-machine-state!  parameter-registers caller-saved-registers
 	 frame-pointer-register return-value-register
-	 return-address-register allocation-pointer-register)
+	 return-address-register allocation-pointer-register the-stack the-heap)
   (define heap-offset (/ (+ (most-positive-fixnum) 1) 2))
 
   (define registers

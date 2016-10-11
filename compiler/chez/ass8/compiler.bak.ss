@@ -31,12 +31,10 @@
 ; relop -> = | > | < | >= | <=
 ;
 
-;(case-sensitive #t)
+(case-sensitive #t)
 
 (load "../lib/match.ss")
 (load "../lib/helpers.ss")
-(load "../lib/fmts.pretty")
-(load "../lib/driver.ss")
 
 ;;;
 ; cont monad
@@ -54,6 +52,11 @@
 ;;;
 
 (define (id x) x)
+
+(define (take n lst)
+  (if (= n 0)
+      '()
+      (cons (car lst) (take (sub1 n) (cdr lst)))))
 
 (define (skip-names name*)
   (unless (null? name*)
@@ -104,13 +107,15 @@
 
   (define (uncover-set var live* triv-live*)
     (let ([new-live* (difference live* `(,var))])
-      (when (uvar? var)
-        (add-conflict var new-live*))
-      (when (or (uvar? var) (target? var))
-        (for-each (lambda (live)
-                    (when (uvar? live)
-                      (add-conflict live `(,var))))
-                  new-live*))
+      (cond
+        [(uvar? var) (add-conflict var new-live*)]
+        [(target? var)
+         (let loop ([new-live* new-live*])
+           (unless (null? new-live*)
+             (when (uvar? (car new-live*))
+               (add-conflict (car new-live*) `(,var)))
+             (loop (cdr new-live*))))]
+        [else (void)])
       (union new-live* triv-live*)))
 
   (define (live-analysis x live* false-live*)
@@ -148,9 +153,24 @@
       (unless (null? uvar*)
         (error 'check-live-set "uninitialized var" uvar*))))
 
+    (define (normalize conflicts)
+      (let loop ([conflicts conflicts] [acc '()])
+        (if (null? conflicts)
+            (reverse acc)
+            (let* ([conflict (car conflicts)]
+                   [rst (cdr conflicts)]
+                   [var (car conflict)])
+              (let-values ([(vars locs) (partition (lambda (v)
+                                                     (and (uvar? v) (assq v rst)))
+                                                   (cdr conflict))])
+                (for-each (lambda (v)
+                            (add-conflict v (list var)))
+                          vars)
+                (loop rst (cons (cons var locs) acc)))))))
+
   (begin
     (check-live-set (live-analysis tail '() #f))
-    (values conflicts call-live*)))
+    (values (normalize conflicts) call-live*)))
 
 
 (define (map-uil-body func pgm)
@@ -416,16 +436,9 @@
                     (do/k
                      (s <- ((car r*)))
                      (loop (cdr r*) (cons s s*)))))))]
-          [,uvar
-           (guard (and #f (uvar? uvar)))
-           (if (eq? ct 'app)
-               (lambda (ctx)
-                 (with-u (lambda (u) `(set! ,u ,uvar)) ctx))
-               (return uvar))]
           [,triv
            (guard (or (uvar? triv) (number? triv) (label? triv)))
-           (return triv)]
-          [,x (error 'remove-complex-opera* "invalid expression" x)])))
+           (return triv)])))
     (values (reverse new-uvar*) (((rm 'tail) tail) id)))
 
   (define (Body body)
@@ -517,7 +530,7 @@
      `(letrec ([,label* (lambda ()
                           ,(map (lambda (uvar* args new-frames tail)
                                   `(locals
-                                    (,uvar* ... ,rp ,args ... ,new-frames ... ...)
+                                    (,uvar* ... ,rp ,args ... ,new-frames ...)
                                     (new-frames
                                      ,new-frames
                                      ,(let ([loc* (alloc-loc* (length args))])
@@ -529,7 +542,7 @@
                                 args*
                                 new-frames*
                                 tail*))] ...)
-        (locals (,u* ... ,rp ,new-frames ... ...)
+        (locals ,u*
                 (new-frames ,new-frames
                             ,(make-begin
                               `((set! ,rp ,return-address-register)
@@ -704,6 +717,11 @@
           '()
           triv)]))
 
+    (define (Triv1 triv ct ctx)
+      (do/k
+       (ef* triv <- (Triv triv ct))
+       (make-begin `(,@ef* ,(ctx triv)))))
+
     (define (select/k x k)
       (define (>>) (k x))
       (match x
@@ -773,8 +791,8 @@
                        `(,triv1-ef* ... ,triv2-ef* ...
                                     (,relop ,triv1 ,triv2))))))]
         [(,triv ,loc* ...)
-         (do/k (ef* triv <- (Triv triv #f))
-               (k (make-begin `(,ef* ... (,triv ,loc* ...)))))]))
+         (do/k (triv <- (Triv1 triv #f))
+               (k `(,triv ,loc* ...)))]))
 
     (let ([tail (select/k tail id)])
       (values (reverse unspill*) tail)))
@@ -826,45 +844,38 @@
 
 
 (define (assign-registers pgm)
-  (define registers '(rax rbx rcx rdx rbp r8 r9))
+  (define registers '(rax rbp r8 r9))
   ;(define registers '(rax r8))
 
   ; very simple assign (linear assign)
   (define (assign  unspill* rc-graph)
-    (define (unspill? uvar) (memq uvar unspill*))
     (define (select-register regs conflicts)
       (if (null? regs)
           #f
           (if (memq (car regs) conflicts)
               (select-register (cdr regs) conflicts)
               (car regs))))
-    (define (reorder graph)
-      ; make unspill* before the others
-      (let-values ([(u* s*) (partition (lambda (r) (unspill? (car r)))
-                                       graph)])
-        (append u* s*)))
-    (define (expose-conflicts conflicts mapping)
-      (let loop ([c* conflicts])
-        (if (null? c*)
-            '()
-            (let ([v (car c*)])
-              (if (uvar? v)
-                  (let ([a (assq v mapping)])
-                    (if a
-                        (cons (cadr a) (loop (cdr c*)))
-                        (loop (cdr c*))))
-                  (cons v (loop (cdr c*))))))))
-    (let loop ([g (reorder rc-graph)] [res '()])
+    (define (select-spills uvar* unspill* n)
+      (let ([spillable* (filter (lambda (v) (not (memq v unspill*)))
+                                (reverse uvar*))])
+        (if (> n (length spillable*))
+            (error 'assign-register "not enough registers")
+            (reverse (take n spillable*)))))
+    (let loop ([g rc-graph] [res '()])
       (if (null? g)
           (values (reverse res) '())
           (let ([uvar (caar g)]
                 [reg (select-register registers
-                                      (expose-conflicts (cdar g) res))])
+                                      (map (lambda (v)
+                                             (if (uvar? v)
+                                                 (cadr (assq v res))
+                                                 v))
+                                           (cdar g)))])
             (if reg
                 (loop (cdr g) (cons (list uvar reg) res))
-                (if (unspill? uvar)
-                    (error 'assign-registers "not enough registers" uvar)
-                    (values #f (map car g))))))))
+                (values #f (select-spills (map car rc-graph)
+                                          unspill*
+                                          (length g))))))))
 
   (define (Body body)
     (match body
@@ -1048,60 +1059,62 @@
 
 (define (expose-mem-var pgm)
 
-  (define fp-offset 0)
+  (define (Tail tail)
+    (match tail
+      [(if ,[Pred -> prd] ,[tail1] ,[tail2])
+       `(if ,prd ,tail1 ,tail2)]
+      [(begin ,[Effect -> effect*] ... ,[tl])
+       `(begin ,effect* ... ,tl)]
+      [(,[Triv -> triv]) `(,triv)]))
 
-  (define (expose x)
-    (match x
-      [(if ,[p] ,[x1] ,[x2]) `(if ,p ,x1 ,x2)]
-      [(begin ,[x0]) `(begin ,x0)]
-      [(begin ,[ef] ,ef* ... ,x0)
-       (make-begin `(,ef ,(expose `(begin ,ef* ... ,x0))))]
-      [(set! ,fp (,binop ,a ,b)) (guard (eq? fp frame-pointer-register))
-       (let ([ef `(set! ,fp (,binop ,a ,b))])
-         (unless (and (eq? fp a) (number? b) (binop? binop))
-           (error 'expose-frame-var "invalid fp setting" ef))
-         (set! fp-offset ((eval binop) fp-offset b))
-         ef)
-       ]
-      [(set! ,[lhs] (,binop ,[a] ,[b])) (guard (binop? binop))
-       `(set! ,lhs (,binop ,a ,b))]
-      [(set! ,[lhs] ,[rhs]) `(set! ,lhs ,rhs)]
-      [(return-point ,rp-label ,[tail])
+  (define (Pred prd)
+    (match prd
+      [(if ,[pd0] ,[pd1] ,[pd2])
+       `(if ,pd0 ,pd1 ,pd2)]
+      [(begin ,[Effect -> effect*] ... ,[pd])
+       `(begin ,effect* ... ,pd)]
+      [(,relop ,[Triv -> triv1] ,[Triv -> triv2])
+       `(,relop ,triv1 ,triv2)]
+      [,x x]))
+
+  (define (Effect effect)
+    (match effect
+      [(set! ,[Triv -> lhs] (,binop ,[Triv -> triv1] ,[Triv -> triv2]))
+       (guard (binop? binop))
+       `(set! ,lhs (,binop ,triv1 ,triv2))]
+      [(set! ,[Triv -> lhs] ,[Triv -> triv])
+       `(set! ,lhs ,triv)]
+      [(return-point ,rp-label ,[Tail -> tail])
        `(return-point ,rp-label ,tail)]
-      [(nop) `(nop)]
-      [(false) `(false)]
-      [(true) `(true)]
-      [(,relop ,[a] ,[b]) (guard (relop? relop))
-       `(,relop ,a ,b)]
-      [(,[triv]) `(,triv)]
+      [(if ,[Pred -> prd] ,[effect1] ,[effect2])
+       `(if ,prd ,effect1 ,effect2)]
+      [(begin ,[effect*] ... ,[effect])
+       `(begin ,effect* ... ,effect)]
+      [(nop) `(nop)]))
+
+  (define (Triv triv)
+    (match triv
       [(mref ,base ,offset)
        (cond
          [(and (register? base) (register? offset))
           (make-index-opnd base offset)]
          [(and (register? base) (number? offset))
           (make-disp-opnd base offset)]
-         [(and (number? base) (register? offset))
-          (make-disp-opnd offset base)]
          [else
           (error 'expose-heap-var "invalid mref" base offset)])]
       [,triv
        (guard (frame-var? triv))
        (make-disp-opnd frame-pointer-register
-                       (- (fxsll (frame-var->index triv) align-shift)
-                          fp-offset))]
+                       (fxsll (frame-var->index triv) align-shift))]
       [,triv triv]))
-
-  (define (Body body)
-    (set! fp-offset 0)
-    (expose body))
 
   (define (Dec dec)
     (match dec
-      [(,label (lambda () ,[Body -> tail]))
+      [(,label (lambda () ,[Tail -> tail]))
        `(,label (lambda () ,tail))]))
 
   (match pgm
-    [(letrec (,[Dec -> dec*] ...) ,[Body -> tail])
+    [(letrec (,[Dec -> dec*] ...) ,[Tail -> tail])
      `(letrec ,dec* ,tail)]))
 
 
@@ -1270,3 +1283,219 @@
     [(code ,stm+ ...)
      (emit-program (for-each (lambda (stm) (stm<= stm)) stm+))]))
 
+
+(define (compiler-passes . passes)
+  (lambda (pgm)
+    (fold-left (lambda (acc pass)
+                 (pass acc))
+               pgm
+               passes)))
+
+(define (iterate . passes)
+  (define (this-pass pgm)
+    (let loop ([ps passes] [pgm pgm])
+      (if (null? ps)
+          (this-pass pgm)
+          (let ([ret ((car ps) pgm)])
+            (if ret
+                (loop (cdr ps) ret)
+                pgm)))))
+  this-pass)
+
+(define (break-if pred?)
+  (lambda (pgm) (and (not (pred? pgm)) pgm)))
+
+(define (probe pass)
+  (lambda (pgm)
+    (let ([ret (pass pgm)])
+      (if (eq? ret (void))
+          (void)
+          (pretty-print ret))
+      ret)))
+
+(define compiler
+  (compiler-passes
+   verify-uil
+   skip-used-name
+   remove-complex-opera*
+   impose-calling-conventions
+   uncover-frame-conflict
+   pre-assign-frame
+   assign-new-frame
+
+   (iterate
+    finalize-frame-locations
+    select-instructions
+    ;(break-if (lambda (pgm) #t))
+    uncover-register-conflict
+    assign-registers
+    (break-if everybody-home?)
+    assign-frame
+    )
+
+   discard-call-live
+   finalize-locations
+   expose-mem-var
+   expose-basic-blocks
+   flatten-program
+   generate-x86-64
+   ))
+
+(define test1
+  '(letrec ([f$1 (lambda (a.11 b.2 d.4)
+                   (locals (c.3)
+                           (begin
+                             (set! c.3 (+ a.11
+                                          (+ a.11
+                                             (if (> a.11 b.2)
+                                                 (+ a.11 a.11)
+                                                 (+ b.2 b.2)))))
+                             (if (if (true)
+                                     (> c.3 (+ a.11 a.11))
+                                     (> 0 (+ 1 (begin
+                                                 (set! a.11 1)
+                                                 (+ 1 1)))))
+                                 (set! b.2 99)
+                                 (nop))
+                             (set! b.2 (begin
+                                         (set! b.2 (+ b.2 c.3))
+                                         (set! a.11 1)
+                                         (+ (+ a.11 a.11) b.2)))
+                             (+ b.2 d.4))))])
+     (locals () (f$1 1 2 3))))
+
+(define test2 '(letrec ([f$1 (lambda ()
+                               (locals ()
+                                       1))])
+                 (locals () (f$1))))
+
+(define test3 '(letrec ()
+                 (locals
+                  (a.1)
+                  (begin
+                    (set! a.1 (+ 1 (if (true) 2 3)))
+                    a.1))))
+
+(define test4 '(letrec ()
+                 (locals (a.1 b.2 c.3 d.4)
+                         (begin
+                           (set! a.1 99)
+                           (set! b.2 88)
+                           (if (true)
+                               (set! c.3 a.1)
+                               (set! c.3 b.2))
+                           (set! d.4 11)
+                           (set! d.4 (+ d.4 c.3))
+                           d.4))))
+
+(define test5 '(letrec ([f$1 (lambda (a.1 b.2 c.3)
+                               (locals
+                                ()
+                                (begin
+                                  (if (begin (set! a.1 (+ b.2 a.1))
+                                             (> a.1 b.2))
+                                      (set! a.1 (begin
+                                                  (set! a.1 1)
+                                                  (+ a.1 b.2)))
+                                      (set! a.1 (if (true) 1 2)))
+                                  (+ a.1 b.2))))]
+                        [g$2 (lambda (a.1 b.2 c.3)
+                               (locals () (+ a.1
+                                             (begin
+                                               (set! a.1 2)
+                                               (+ a.1 1)))))])
+                 (locals (c.3)
+                         (begin
+                           (set! c.3 (+ 1 (if (true) 3 4)))
+                           (g$2 1 2 3)
+                           (f$1 1
+                                (if (true)
+                                    (if (true) 2 3)
+                                    (if (true) 1 4))
+                                (g$2 2 3 4))))))
+
+; TODO: the order of set! and app
+(define test6 '(letrec () (locals (a.1)
+                                  (begin
+                                    (set! a.1 1)
+                                    (+ a.1 (begin
+                                             (set! a.1 2)
+                                             a.1))))))
+
+; test call-live
+(define test7 '(letrec ([f$1 (lambda (a.1 b.2)
+                               (locals () (+ a.1 b.2)))])
+                 (locals (a.1 b.2)
+                         (begin
+                           (set! a.1 1)
+                           (set! b.2 2)
+                           (set! a.1 (f$1 a.1 b.2))
+                           (f$1 a.1 2)))))
+
+(define test8 '(letrec ([f$1 (lambda () (locals () 8))])
+                 (locals (a.1 b.2)
+                         (begin
+                           (set! a.1 (alloc 24))
+                           (mset! a.1 16 (f$1))
+                           (mset! a.1 0 (+ 10 1))
+                           (mset! a.1 (+ 0 8) (mref a.1 0))
+                           (mset! a.1 (mref a.1 16)
+                                  (+ (mref a.1 (mref a.1 16)) 11))
+                           (+ (mref a.1 0)
+                              (begin
+                                (set! b.2 (mref a.1 8))
+                                b.2))))))
+
+(define test9 '(letrec ([f$1 (lambda ()
+                               (locals () 222))])
+                 (locals
+                  (a.1 b.2)
+                  (begin
+                    (set! a.1 (alloc 8))
+                    (mset! a.1 0 1)
+                    (mset! a.1 0 (mref a.1 0))
+                    (set! b.2 0)
+                    (if (= (mref a.1 0) (mref a.1 0))
+                        (begin
+                          (mset! a.1 0 f$1)
+                          ((mref a.1 b.2)))
+                        2)))))
+
+(define test-gcd '(letrec ([r$1 (lambda (a.1 b.2)
+                                  (locals
+                                   ()
+                                   (if (< a.1 b.2)
+                                       a.1
+                                       (r$1 (- a.1 b.2) b.2))))]
+                           [gcd$2 (lambda (a.1 b.2)
+                                    (locals
+                                     ()
+                                     (if (= b.2 0)
+                                         a.1
+                                         (gcd$2 b.2 (r$1 a.1 b.2)))))])
+                    (locals () (gcd$2 144 12144))))
+
+(define test10 '(letrec ()
+                  (locals (a.1)
+                          (begin
+                            (set! a.1 10)
+                            (if (< 7 a.1) (nop) (set! a.1 (+ a.1 a.1)))
+                            a.1))))
+
+(define testx '(letrec ([f$1 (lambda () (locals () 1))])
+                 (locals (a.1)
+                         (begin (set! a.1 (alloc 16))
+                                (f$1)
+                                (mset! a.1 0 (mref a.1 8))
+                                1))))
+
+(let ([pgm test-gcd])
+  (printf "source: ~n")
+  (pretty-print pgm)
+  (printf "~n~n")
+  (let ([ret (with-output-to-file "_local_t.s"
+               (lambda () (compiler pgm))
+               'truncate)])
+    (if (eq? ret (void))
+        (void)
+        (pretty-print ret))))
