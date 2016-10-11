@@ -35,7 +35,7 @@
   (tracer #t)
   (let ([src (list-ref tests idx)])
     (pretty-print src)
-    (test-one src)))
+    (test-one src #t)))
 
 (define test
   (case-lambda
@@ -47,4 +47,4 @@
 
 ;(check-final-output-only #t)
 ;(test-idx 24)
- (test 27)
+(test)

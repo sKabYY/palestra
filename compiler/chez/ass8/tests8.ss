@@ -684,7 +684,7 @@
                             (locals ()
                               (mref (mref self.9 16) 
                                     (* (- (mref 8 self.9) 1) 8))))])
-      (locals (s1.10 s2.11)
+      (locals (s1.10 s2.11 sum.12)
         (begin
           (set! s1.10 (stack-new$0 10))
           ((invoke$1 s1.10 0) s1.10 10) ;; push 10
@@ -708,15 +708,14 @@
           ((invoke$1 s1.10 1) s1.10) ;; pop
           ((invoke$1 s2.11 0) s2.11 ((invoke$1 s1.10 1) s1.10))
           ((invoke$1 s1.10 1) s1.10) ;; pop
-          (+
-            (+ 
-              (+ ((invoke$1 s2.11 2) s2.11) ((invoke$1 s2.11 1) s2.11))
-              (+ ((invoke$1 s2.11 2) s2.11) ((invoke$1 s2.11 1) s2.11)))
-            (+
-              (+ ((invoke$1 s2.11 2) s2.11) ((invoke$1 s2.11 1) s2.11))
-              (+ 
-                (+ ((invoke$1 s2.11 2) s2.11) ((invoke$1 s2.11 1) s2.11))
-                (+ ((invoke$1 s2.11 2) s2.11) ((invoke$1 s2.11 1) s2.11))))))))
+          (set! sum.12 ((invoke$1 s2.11 2) s2.11))
+          (set! sum.12 (+ sum.12 (+ (+ ((invoke$1 s2.11 1) s2.11)
+                                       ((invoke$1 s2.11 1) s2.11))
+                                    (+ ((invoke$1 s2.11 1) s2.11)
+                                       ((invoke$1 s2.11 1) s2.11)))))
+          (set! sum.12 (+ sum.12 ((invoke$1 s2.11 2) s2.11)))
+          (set! sum.12 (+ sum.12 ((invoke$1 s2.11 1) s2.11)))
+          sum.12)))
 
     ;;;;;;
     ;;; Student tests from a8 before 
@@ -950,6 +949,18 @@
           (mset! x.2 0 10)
           (mset! x.2 8 20)
           (main$0 x.2))))
+
+    ;; YY
+    (letrec ()
+      (locals (a.1 x.2)
+        (begin
+          (set! x.2 (alloc 16))
+          (mset! x.2 8 3)
+          (mref (begin (if (< 400000000000 -2147483648)
+                           (set! a.1 x.2)
+                           (set! a.1 x.2))
+                       a.1)
+                (begin (set! a.1 8) a.1)))))
 
     ;; Yin Wang
     (letrec ()

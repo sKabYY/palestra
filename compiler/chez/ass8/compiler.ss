@@ -38,6 +38,12 @@
 (load "../lib/fmts.pretty")
 (load "../lib/driver.ss")
 
+(define parameter-registers '())
+(define registers '(rax rbx rcx rdx rbp r8 r9))
+;(define registers '(rax r8))
+
+(define *enable-args-eval-order* #t)
+
 ;;;
 ; cont monad
 
@@ -417,8 +423,8 @@
                      (s <- ((car r*)))
                      (loop (cdr r*) (cons s s*)))))))]
           [,uvar
-           (guard (and #f (uvar? uvar)))
-           (if (eq? ct 'app)
+           (guard (and *enable-args-eval-order* (uvar? uvar)))
+           (if (memq ct '(app mref))
                (lambda (ctx)
                  (with-u (lambda (u) `(set! ,u ,uvar)) ctx))
                (return uvar))]
@@ -437,7 +443,6 @@
 
 
 (define (impose-calling-conventions pgm)
-  (define parameter-registers '())
 
   (define (alloc-loc* n)
     (let loop ([n n] [regs parameter-registers] [idx 0] [acc '()])
@@ -687,6 +692,13 @@
         (set! unspill* (cons u unspill*))
         u))
 
+    (define (make-relop relop a b)
+      (if (and (number? b) (not (int32? b)))
+          (let ([u (temp-var)])
+            `(begin (set! ,u ,b)
+                    (,relop ,a ,u)))
+          `(,relop ,a ,b)))
+
     (define (Triv triv ct ctx)
       (define (ctx/u ef* v)
         (let ([u (temp-var)])
@@ -768,10 +780,10 @@
                            (set! ,u ,triv1)
                            ,triv2-ef*
                            ...
-                           (,relop ,u ,triv2))))
+                           ,(make-relop relop u triv2))))
                       (make-begin
                        `(,triv1-ef* ... ,triv2-ef* ...
-                                    (,relop ,triv1 ,triv2))))))]
+                                    ,(make-relop relop triv1 triv2))))))]
         [(,triv ,loc* ...)
          (do/k (ef* triv <- (Triv triv #f))
                (k (make-begin `(,ef* ... (,triv ,loc* ...)))))]))
@@ -826,8 +838,6 @@
 
 
 (define (assign-registers pgm)
-  (define registers '(rax rbx rcx rdx rbp r8 r9))
-  ;(define registers '(rax r8))
 
   ; very simple assign (linear assign)
   (define (assign  unspill* rc-graph)
