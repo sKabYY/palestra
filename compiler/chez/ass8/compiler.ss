@@ -309,7 +309,6 @@
 ;       | (begin E* X)
 ; T -> Triv
 ;    | (binop Triv Triv)
-;    | (mref Triv Triv)
 ;    | (Triv Triv*)
 ;    | F[T]
 ; E -> (nop)
@@ -340,6 +339,8 @@
     (define (with-u make-effect ctx)
       (let ([u (new-temp-var)])
         (make-begin (list (make-effect u) (ctx u)))))
+
+    ; ct: tail rhs seq test alloc arg fun
     (define (rm ct)
       (lambda (x)
         (match x
@@ -348,7 +349,7 @@
           [(false) (return `(false))]
           [(set! ,lhs ,[(rm 'rhs) -> v])
            (return (v (set!-ctx lhs)))]
-          [(mset! ,[(rm 'mref) -> base] ,[(rm 'mref) -> offset]
+          [(mset! ,[(rm 'arg) -> base] ,[(rm 'arg) -> offset]
                   ,[(rm 'rhs) -> v])
            (return
             (do/k
@@ -368,7 +369,7 @@
                                 ,(((rm 'rhs) x1) (set!-ctx u))
                                 ,(((rm 'rhs) x2) (set!-ctx u))))
                    ctx)))]
-          [(alloc ,[(rm 'app) -> v])
+          [(alloc ,[(rm 'alloc) -> v])
            (lambda (ctx)
              (do/k
               (s <- (v))
@@ -378,37 +379,24 @@
                            (set! ,allocation-pointer-register
                                  (+ ,allocation-pointer-register ,s)))))
                 ctx)))]
-          [(mref ,[(rm 'mref) -> base] ,[(rm 'mref) -> offset])
+          [(,op ,[(rm 'arg) -> v1] ,[(rm 'arg) -> v2])
+           (guard (or (binop? op) (relop? op) (eq? op 'mref)))
            (lambda (ctx)
              (do/k
-              (base <- (base))
-              (offset <- (offset))
-              (let ([value `(mref ,base ,offset)])
-                (if (memq ct '(tail rhs test app))
-                    (ctx value)
-                    (with-u (lambda (u)
-                              `(set! ,u ,value))
-                      ctx)))))]
-          [(,op ,[(rm 'app) -> v*] ...)
-           (guard (or (binop? op) (relop? op)))
-           (lambda (ctx)
-             (let loop ([v* v*] [s* '()])
-               (if (null? v*)
-                   (let ([value `(,op ,(reverse s*) ...)])
-                     (if (memq ct '(tail rhs test))
+              (s1 <- (v1))
+              (s2 <- (v2))
+              (let ([value `(,op ,s1 ,s2)])
+                (if (memq ct '(tail rhs test))
                          (ctx value)
                          (with-u (lambda (u)
                                    `(set! ,u ,value))
-                           ctx)))
-                   (do/k
-                    (s <- ((car v*)))
-                    (loop (cdr v*) (cons s s*))))))]
-          [(,[(rm 'app) -> rator] ,[(rm 'app) -> rand*] ...)
+                           ctx)))))]
+          [(,[(rm 'fun) -> rator] ,[(rm 'arg) -> rand*] ...)
            (lambda (ctx)
-             (do/k
-              (s0 <- (rator))
-              (let loop ([r* rand*] [s* '()])
-                (if (null? r*)
+             (let loop ([r* rand*] [s* '()])
+               (if (null? r*)
+                   (do/k
+                    (s0 <- (rator))
                     (let ([app `(,s0 ,(reverse s*) ...)])
                       (if (eq? ct 'tail)
                           (ctx app)
@@ -418,16 +406,14 @@
                                 (ctx nontail)
                                 (with-u (lambda (u)
                                           `(set! ,u ,nontail))
-                                  ctx)))))
-                    (do/k
-                     (s <- ((car r*)))
-                     (loop (cdr r*) (cons s s*)))))))]
+                                  ctx))))))
+                   (do/k
+                    (s <- ((car r*)))
+                    (loop (cdr r*) (cons s s*))))))]
           [,uvar
-           (guard (and *enable-args-eval-order* (uvar? uvar)))
-           (if (memq ct '(app mref))
-               (lambda (ctx)
-                 (with-u (lambda (u) `(set! ,u ,uvar)) ctx))
-               (return uvar))]
+           (guard (and (uvar? uvar) (eq? ct 'arg)))
+           (lambda (ctx)
+             (with-u (lambda (u) `(set! ,u ,uvar)) ctx))]
           [,triv
            (guard (or (uvar? triv) (number? triv) (label? triv)))
            (return triv)]
