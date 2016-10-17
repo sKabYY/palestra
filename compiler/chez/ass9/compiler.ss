@@ -92,8 +92,17 @@
     [(_ e0 e e* ...)
      (begin e0 (do/k e e* ...))]))
 
-
 ;;;
+
+(define-syntax letv*
+  (syntax-rules ()
+    [(_ () body ...) (begin body ...)]
+    [(_ ([(x0 ...) v0] [x1 v1] ...) body ...)
+     (let-values ([(x0 ...) v0])
+       (letv* ([x1 v1] ...) body ...))]
+    [(_ ([x0 v0] [x1 v1] ...) body ...)
+     (let ([x0 v0])
+       (letv* ([x1 v1] ...) body ...))]))
 
 (define (id x) x)
 
@@ -409,7 +418,7 @@
       (let ([u (new-temp-var)])
         (make-begin (list (make-effect u) (ctx u)))))
 
-    ; ct: tail rhs seq test alloc arg fun
+    ; ct: tail rhs seq test alloc arg
     (define (rm ct)
       (lambda (x)
         (match x
@@ -460,12 +469,12 @@
                          (with-u (lambda (u)
                                    `(set! ,u ,value))
                            ctx)))))]
-          [(,[(rm 'fun) -> rator] ,[(rm 'arg) -> rand*] ...)
+          [(,[(rm 'arg) -> rator] ,[(rm 'arg) -> rand*] ...)
            (lambda (ctx)
-             (let loop ([r* rand*] [s* '()])
-               (if (null? r*)
-                   (do/k
-                    (s0 <- (rator))
+             (do/k
+              (s0 <- (rator))
+              (let loop ([r* rand*] [s* '()])
+                (if (null? r*)
                     (let ([app `(,s0 ,(reverse s*) ...)])
                       (if (eq? ct 'tail)
                           (ctx app)
@@ -475,10 +484,10 @@
                                 (ctx nontail)
                                 (with-u (lambda (u)
                                           `(set! ,u ,nontail))
-                                  ctx))))))
-                   (do/k
-                    (s <- ((car r*)))
-                    (loop (cdr r*) (cons s s*))))))]
+                                  ctx)))))
+                    (do/k
+                     (s <- ((car r*)))
+                     (loop (cdr r*) (cons s s*)))))))]
           [,uvar
            (guard (and (uvar? uvar) (eq? ct 'arg)))
            (lambda (ctx)
@@ -594,6 +603,173 @@
                             ,(make-begin
                               `((set! ,rp ,return-address-register)
                                 ,tail)))))]))
+
+
+(define (forward-propagate x target?)
+
+  (define (appenv env a)
+    (cond
+      [(assq a env) => cdr]
+      [else a]))
+
+  (define (extenv a b env)
+    (cons (cons a b) env))
+
+  (define (eliminate a env)
+    (filter (lambda (p) (not (or (eq? (car p) a) (eq? (cdr p) a))))
+            env))
+
+  (define (remove-loc* env)
+    (define (loc? x) (or (register? x) (frame-var? x)))
+    (filter (lambda (p) (not (or (loc? (car p)) (loc? (cdr p)))))
+            env))
+
+  (define (intersect e1 e2)
+    (cond
+      [(null? e1) '()]
+      [(null? e2) '()]
+      [(member (car e1) e2)
+       (cons (car e1) (intersect (cdr e1) e2))]
+      [else (intersect (cdr e1) e2)]))
+
+  (define (forward x env)
+    (match x
+      [(set! ,a ,b)
+       (letv*
+        ([(b^ env1) (forward b env)])
+        (values `(set! ,a ,b^)
+                (let ([ee (eliminate a env1)])
+                  (if (and (target? a) (not (pair? b^)))
+                      (extenv a b^ ee)
+                      ee))))]
+      [(begin ,x0) (forward x0 env)]
+      [(begin ,e ,e* ... ,x0)
+       (letv*
+        ([(e^ env1) (forward e env)]
+         [(e*^ env2) (forward `(begin ,e* ... ,x0) env1)])
+        (values (make-begin `(,e^ ,e*^)) env2))]
+      [(if ,p ,x1 ,x2)
+       (letv*
+        ([(p^ env0) (forward p env)]
+         [(x1^ env1) (forward x1 env0)]
+         [(x2^ env2) (forward x2 env0)])
+        (values `(if ,p^ ,x1^ ,x2^) (intersect env1 env2)))]
+      [(,h ,t* ...)
+       (guard (or (memq h '(return-point nop false true mref))
+                  (relop? h)
+                  (binop? h)))
+       (let loop ([t* t*] [env env] [acc '()])
+         (if (null? t*)
+             (values (cons h (reverse acc)) env)
+             (letv*
+              ([(t^ envt) (forward (car t*) env)])
+              (loop (cdr t*) envt (cons t^ acc)))))
+       ]
+      [(,h ,t* ...)
+       (letv*
+        ([(h^ envh) (forward h env)])
+        (let loop ([t* t*] [env envh] [acc '()])
+          (if (null? t*)
+              (values (cons h^ (reverse acc)) (remove-loc* env))
+              (letv*
+               ([(t^ envt) (forward (car t*) env)])
+               (loop (cdr t*) envt (cons t^ acc))))))]
+      [,x (values (appenv env x) env)]))
+
+  (letv* ([(x^ env) (forward x '())]) x^))
+
+
+(define (backward-delete x)
+
+  (define (Triv triv)
+    (values
+     triv
+     (filter (lambda (v) (or (uvar? v) (register? v) (frame-var? v)))
+             (match triv
+               [(mref ,base ,offset) (list base offset)]
+               [,triv (list triv)]))))
+
+  (define (set-live* var live* triv-live*)
+    (let ([new-live* (difference live* `(,var))])
+      (union new-live* triv-live*)))
+
+  (define (backward x live* false-live*)
+    (define true-live* live*)
+    (match x
+      [(if ,prd ,[x1 true-live*] ,[x2 false-live*])
+       (letv*
+        ([(prd live*) (backward prd true-live* false-live*)])
+        (values `(if ,prd ,x1 ,x2) live*))]
+      [(begin ,[x0 lv*]) (values x0 lv*)]
+      [(begin ,effect* ... ,[x0 lv*])
+       (letv*
+        ([(ef* live*) (backward `(begin ,effect* ...) lv* #f)])
+        (values (make-begin `(,ef* ,x0)) live*))]
+      [(nop) (values `(nop) live*)]
+      [(set! (mref ,[Triv -> base base-live*]
+                   ,[Triv -> offset offset-live*])
+             (,binop ,[Triv -> triv* triv*-live*] ...))
+       (values
+        `(set! (mref ,base ,offset) (,binop ,triv* ...))
+        (apply union live* base-live* offset-live* triv*-live*))]
+      [(set! (mref ,[Triv -> base base-live*]
+                   ,[Triv -> offset offset-live*])
+             ,[Triv -> triv triv-live*])
+       (values
+        `(set! (mref ,base ,offset) ,triv)
+        (union live* base-live* offset-live* triv-live*))]
+      [(set! ,var (,binop ,[Triv -> triv* triv*-live*] ...))
+       (if (memq var live*)
+           (values
+            `(set! ,var (,binop ,triv* ...))
+            (set-live* var live* (apply union triv*-live*)))
+           (values `(nop) live*))]
+      [(set! ,var ,[Triv -> triv triv-live*])
+       (if (memq var live*)
+           (values
+            `(set! ,var ,triv)
+            (set-live* var live* triv-live*))
+           (values `(nop) live*))]
+      [(return-point ,rp-label ,[tail lv*])
+       (values `(return-point ,rp-label ,tail) lv*)]
+      [(true) (values `(true) true-live*)]
+      [(false) (values `(false) false-live*)]
+      [(,relop ,[Triv -> triv* triv*-live*] ...)
+       (guard (relop? relop))
+       (values
+        `(,relop ,triv* ...)
+        (apply union true-live* false-live* triv*-live*))]
+      [(,[Triv -> triv triv-live*] ,loc* ...)
+       (values
+        `(,triv ,loc* ...)
+        (set-live* return-value-register
+                     live*
+                     (union loc* triv-live*)))]))
+
+  (letv* ([(x^ live*) (backward x '() #f)]) x^))
+
+
+(define (forward-locations pgm)
+  (map-uil-body
+   (lambda (body)
+     (match body
+       [(locals
+         ,uvar*
+         (new-frames
+          ,new-frame* ,tail))
+        (let ([target?
+               (let ([nfv* `(,new-frame* ... ...)])
+                 (lambda (x)
+                   (not (or (register? x)
+                            (frame-var? x)
+                            (memq x nfv*)))))])
+          `(locals
+            ,uvar*
+            (new-frames
+             ,new-frame*
+             ,(backward-delete
+               (forward-propagate tail target?)))))]))
+   pgm))
 
 
 (define (uncover-frame-conflict pgm)

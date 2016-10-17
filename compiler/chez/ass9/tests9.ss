@@ -1,3 +1,11 @@
+(define my-tests
+  '((letrec ()
+      (let ([a.1 1])
+        (if (let ([b.2 2])
+              (= 1 b.2))
+            1
+            (let ([x.3 a.1]) 2))))))
+
 (define invalid-tests 
   '(3
     (begin rax 5)
@@ -1125,3 +1133,5 @@
                        (+ n.2014 o.2015))))))))))))))])
             (+ a.102 a.1)))))
     ))
+
+(set! tests (append my-tests tests))

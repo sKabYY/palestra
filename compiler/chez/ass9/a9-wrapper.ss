@@ -146,7 +146,7 @@
           (define (false) #f)
           (define (nop) (void))
           ,x)]
-      [(impose-calling-conventions)
+      [(impose-calling-conventions forward-locations)
        (let ([frame-size (compute-frame-size x)])
          `(let ()
             (import (except scheme set! letrec))

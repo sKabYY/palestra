@@ -13,6 +13,7 @@
    skip-used-name
    remove-complex-opera*
    impose-calling-conventions
+   forward-locations
    uncover-frame-conflict
    pre-assign-frame
    assign-new-frame
@@ -46,5 +47,5 @@
 ;(trusted-passes '(remove-let))
 
 ;(check-final-output-only #t)
-;(tracer #t)
+;(tracer '(remove-let impose-calling-conventions forward-locations))
 (test)

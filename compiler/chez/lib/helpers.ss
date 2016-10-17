@@ -746,8 +746,12 @@
     (define strip-begin
       (lambda (expr*)
         (match `(begin ,@expr*)
-          [(begin ,[expr*] ...) (apply append expr*)]
-          [,expr (list expr)])))    
+          [(begin ,[expr*] ...)
+           (let ([expr* (filter (lambda (e)
+                                  (not (equal? e '(nop))))
+                                (apply append expr*))])
+             (if (null? expr*) '((nop)) expr*))]
+          [,expr (list expr)])))
     (match (strip-begin expr*)
       [(,x) x]
       [(,x ,x* ...) `(begin ,x ,x* ...)])))
