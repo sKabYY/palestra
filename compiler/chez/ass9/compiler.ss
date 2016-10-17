@@ -143,7 +143,7 @@
 
     (define (add-local uvar)
       (when (memq uvar local*)
-        (error 'remove-let "redefinition" uvar))
+        (error 'remove-let "multiple definitions" uvar))
       (set! local* (cons uvar local*)))
 
     (define (rm x)
