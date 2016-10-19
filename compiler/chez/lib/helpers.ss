@@ -746,6 +746,17 @@
     (define strip-begin
       (lambda (expr*)
         (match `(begin ,@expr*)
+          [(begin ,[expr*] ...) (apply append expr*)]
+          [,expr (list expr)])))
+    (match (strip-begin expr*)
+      [(,x) x]
+      [(,x ,x* ...) `(begin ,x ,x* ...)])))
+
+(define make-nopless-begin
+  (lambda (expr*)
+    (define strip-begin
+      (lambda (expr*)
+        (match `(begin ,@expr*)
           [(begin ,[expr*] ...)
            (let ([expr* (filter (lambda (e)
                                   (not (equal? e '(nop))))

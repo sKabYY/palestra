@@ -704,7 +704,7 @@
       [(begin ,effect* ... ,[x0 lv*])
        (letv*
         ([(ef* live*) (backward `(begin ,effect* ...) lv* #f)])
-        (values (make-begin `(,ef* ,x0)) live*))]
+        (values (make-nopless-begin `(,ef* ,x0)) live*))]
       [(nop) (values `(nop) live*)]
       [(set! (mref ,[Triv -> base base-live*]
                    ,[Triv -> offset offset-live*])
