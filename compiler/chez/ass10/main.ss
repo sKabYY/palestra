@@ -48,7 +48,7 @@
 ;(trusted-passes '(remove-let))
 
 ;(check-final-output-only #t)
-;(tracer '(remove-let impose-calling-conventions forward-locations))
+;(tracer '(specify-representation))
 (call/cc
  (lambda (k)
    (with-exception-handler

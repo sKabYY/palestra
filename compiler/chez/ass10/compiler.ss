@@ -161,6 +161,17 @@
       [(number? imm) (ash imm shift-fixnum)]
       [else (error "invalid immediate" imm)]))
 
+  (define (trivialize expr tmp-name)
+    (if (trivial? expr)
+        (values expr '())
+        (let ([t (unique-name tmp-name)])
+          (values t `((,t ,expr))))))
+
+  (define (make-arith-op op a b)
+    (if (and (number? a) (number? b))
+        (eval `(,op ,a ,b))
+        `(,op ,a ,b)))
+
   (define (specify x)
     (match x
       [(if ,[p] ,[x1] ,[x2]) `(if ,p ,x1 ,x2)]
@@ -174,28 +185,31 @@
       [(car ,[p]) `(mref ,p ,(- disp-car tag-pair))]
       [(cdr ,[p]) `(mref ,p ,(- disp-cdr tag-pair))]
       [(cons ,[a] ,[b])
-       (let ([tmp-pair (unique-name 'tmp-pair)]
-             [tmp-car (unique-name 'tmp-car)]
-             [tmp-cdr (unique-name 'tmp-cdr)])
-         `(let ([,tmp-car ,a] [,tmp-cdr ,b])
-            (let ([,tmp-pair (+ (alloc ,size-pair) ,tag-pair)])
-              (begin
-                (mset! ,tmp-pair ,(- disp-car tag-pair) ,tmp-car)
-                (mset! ,tmp-pair ,(- disp-cdr tag-pair) ,tmp-cdr)
-                ,tmp-pair))))]
+       (letv*
+        ([tmp-pair (unique-name 'tmp-pair)]
+         [(a^ ad*) (trivialize a 'tmp-car)]
+         [(b^ bd*) (trivialize b 'tmp-cdr)]
+         [d* `(,ad* ... ,bd* ...)]
+         [body `(let ([,tmp-pair (+ (alloc ,size-pair) ,tag-pair)])
+                  (begin
+                    (mset! ,tmp-pair ,(- disp-car tag-pair) ,a^)
+                    (mset! ,tmp-pair ,(- disp-cdr tag-pair) ,b^)
+                    ,tmp-pair))])
+        (if (null? d*) body `(let (,d* ...) ,body)))]
       [(vector-length ,[v])
        `(mref ,v ,(- disp-vector-length tag-vector))]
       [(vector-ref ,[v] ,[idx])
-       `(mref ,v (+ ,idx ,(- disp-vector-data tag-vector)))]
+       `(mref ,v ,(make-arith-op '+ idx (- disp-vector-data tag-vector)))]
       [(make-vector ,[l])
-       (let ([tmp-l (unique-name 'tmp-len)]
-             [tmp-vec (unique-name 'tmp-vec)])
-         `(let ([,tmp-l ,l])
-            (let ([,tmp-vec (+ (alloc (+ ,disp-vector-data ,tmp-l))
-                               ,tag-vector)])
-              (begin
-                (mset! ,tmp-vec ,(- disp-vector-length tag-vector) ,tmp-l)
-                ,tmp-vec))))]
+       (letv*
+        ([tmp-vec (unique-name 'tmp-vec)]
+         [(l^ ld*) (trivialize l 'tmp-len)]
+         [body `(let ([,tmp-vec (+ (alloc ,(make-arith-op '+  disp-vector-data l^))
+                                   ,tag-vector)])
+                  (begin
+                    (mset! ,tmp-vec ,(- disp-vector-length tag-vector) ,l^)
+                    ,tmp-vec))])
+        (if (null? ld*) body `(let (,ld* ...) ,body)))]
       [(void) $void]
       [(* ,[a] ,[b])
        (cond
@@ -216,7 +230,7 @@
       [(set-car! ,[p] ,[v]) `(mset! ,p ,(- disp-car tag-pair) ,v)]
       [(set-cdr! ,[p] ,[v]) `(mset! ,p ,(- disp-cdr tag-pair) ,v)]
       [(vector-set! ,[vec] ,[idx] ,[v])
-       `(mset! ,vec (+ ,idx ,(- disp-vector-data tag-vector)) ,v)]
+       `(mset! ,vec ,(make-arith-op '+ idx (- disp-vector-data tag-vector)) ,v)]
       ; app
       [(,[rator] ,[rand*] ...) `(,rator ,rand* ...)]
       [,triv (guard (or (uvar? triv) (label? triv))) triv]
