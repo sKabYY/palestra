@@ -159,6 +159,9 @@
 
 (define (normalize-context pgm)
 
+  (define (value->pred v)
+    `(if (eq? ,v '#f) (false) (true)))
+
   (define (norm ct)
     (lambda (x)
       (match x
@@ -184,7 +187,7 @@
            (case ct
              [value value]
              [effect `(nop)]
-             [pred `(if (eq? ,value '#f) (false) (true))]))]
+             [pred (value->pred value)]))]
         [(,pred-prim ,[(norm 'value) -> rand*] ...)
          (guard (pred-prim? pred-prim))
          (let ([prd `(,pred-prim ,rand* ...)])
@@ -203,13 +206,13 @@
          (let ([value `(,rator ,rand* ...)])
            (case ct
              [(value effect) value]
-             [pred `(if (eq? ,value '#f) (false) (true))]))]
+             [pred (value->pred value)]))]
         [,triv
          (guard (or (uvar? triv) (label? triv)))
          (case ct
            [value triv]
            [effect `(nop)]
-           [pred `(true)])]
+           [pred (if (uvar? triv) (value->pred triv) `(true))])]
         [,x (error 'normalize-context "invalide expression" x)])))
 
   ((norm 'value) pgm))
@@ -217,10 +220,7 @@
 
 (define (specify-representation pgm)
 
-  (define (trivial? x)
-    (or (number? x)
-        ; TODO: number? is enough
-        (memq x (list $false $true $nil $void))))
+  (define (trivial? x) (number? x))
 
   (define (Imm imm)
     (cond

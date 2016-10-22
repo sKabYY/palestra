@@ -243,13 +243,14 @@ static void print1(ptr x, int d) {
       y = CDR(y);
       len++;
     }
-    if (y != _nil)
-      if (len == MAXLENGTH-1)
+    if (y != _nil) {
+      if (len == MAXLENGTH-1) {
         printf(" ...");
-      else {
+      } else {
         printf(" . ");
         print1(y, d+1);
       }
+    }
     printf(")");
   } else if (TAG(x, mask_vector) == tag_vector) {
     long i, n;
