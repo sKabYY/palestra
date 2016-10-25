@@ -1246,12 +1246,7 @@
            `(,base-ef* ... ,offset-ef* ...)
            `(mref ,base ,offset)))]
         [,triv
-         ((if (cond
-                [(eq? ct 'func) (mem? triv)]
-                [ct (mem-or-label? triv)]
-                [else #f])
-              ctx/u
-              ctx)
+         ((if (and ct (mem-or-label? triv)) ctx/u ctx)
           '()
           triv)]))
 
@@ -1324,7 +1319,7 @@
                        `(,triv1-ef* ... ,triv2-ef* ...
                                     ,(make-relop relop triv1 triv2))))))]
         [(,triv ,loc* ...)
-         (do/k (ef* triv <- (Triv triv 'func))
+         (do/k (ef* triv <- (Triv triv #f))
                (k (make-begin `(,ef* ... (,triv ,loc* ...)))))]))
 
     (let ([tail (select/k tail id)])
@@ -1751,7 +1746,7 @@
        (if (null? label*)
            (optimize `(letrec ,(reverse dec*) ,tail) s)
            (match (car body*)
-             [(lambda () (,to))
+             [(lambda () (,to)) (guard (label? to))
               (loop (cdr label*)
                     (cdr body*)
                     (cons (cons (car label*) to) s)
