@@ -14,7 +14,7 @@
   (lambda (s) `(,s . ,s)))
 
 (define (put-state new-s)
-  (lambda (s) `(_ . ,new-s)))
+  (lambda (s) `(,(void) . ,new-s)))
 
 
 (define (even-length? l)
