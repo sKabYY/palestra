@@ -75,6 +75,11 @@
         (@... (map exactly (string->list str)))
         (return str)))
 
+(define integer
+  (do/m >>=
+        (x <- (@+ digit))
+        (return (string->number (list->string x)))))
+
 (define name
   (do/m >>=
         spaces
@@ -96,3 +101,12 @@
             (n2 <- name)
             (return `(if-then ,n1 ,n2)))
       "if xxx then yyy")
+
+(letrec ([sum-parser (@or
+                      integer
+                      (do/m >>=
+                            (i1 <- sum-parser)
+                            (token "+")
+                            (i2 <- integer)
+                            (return `(+ ,i1 ,i2))))])
+  (test sum-parser "2+3+4+5"))
