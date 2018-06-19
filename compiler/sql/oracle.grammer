@@ -1,0 +1,14 @@
+:: stms
+
+stms = (@+ stm)
+
+stm = (@or create_table:create_table_stm)
+
+create_table_stm =
+(@.. 'CREATE' 'TABLE' table_name '('
+       (@+ column_name datatype (@? (or 'NULL' (@.. 'NOT' 'NULL'))))
+     ')' ';')
+
+table_name = ??
+column_name = ??
+datatype = ??

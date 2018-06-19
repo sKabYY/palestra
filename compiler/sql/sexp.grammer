@@ -1,0 +1,8 @@
+:: sexps
+
+sexps = (@+ sexp)
+sexp = (@or item o:(@.. open sexps close))
+
+open = (@or '(' '[')
+close = (@or ')' ']')
+item = (@! (@or open close))
