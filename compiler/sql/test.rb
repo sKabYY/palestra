@@ -45,8 +45,12 @@ module TestXCcc
 
   require './xccc'
 
+  puts "start #{self}"
+
   str = IO.read('sexp.grammer')
-  grammer = Parsec::xccc_define_grammer(str)
+  grammer = Parsec::xccc_define_grammer(str) do
+    p 'init'
+  end
   #sexp_code = '(x y)'
   sexp_code = <<EOF
 (define (double x) (+ x x))
@@ -59,4 +63,11 @@ EOF
     pp ast
   end
 
+end
+
+puts
+
+module TestOracle
+  puts "start #{self}"
+  require './oracle_checker'
 end

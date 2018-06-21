@@ -1,14 +1,61 @@
 :: stms
 
-stms = (@+ stm)
+stms = (@+ stm ';').
 
-stm = (@or create_table:create_table_stm)
+stm = (@or create_table:create-table-stm).
 
-create_table_stm =
-(@.. 'CREATE' 'TABLE' table_name '('
-       (@+ column_name datatype (@? (or 'NULL' (@.. 'NOT' 'NULL'))))
-     ')' ';')
+identifier = /^[[:alnum:]_]+$/. ; TODO
 
-table_name = ??
-column_name = ??
-datatype = ??
+create-table-stm =
+  'CREATE' 'TABLE' table-name '('
+    create-table-item (@* ',' create-table-item)
+  ')'.
+
+table-name = identifier.
+
+create-table-item = (@or column-definition table-level-constraint).
+
+column-definition =
+  simple-column-name DataType
+  (@* column-level-constraint)
+  (@? (@? 'WITH') 'DEFAULT' DefaultConstantExpression)
+  (@* column-level-constraint).
+DataType = identifier (@? '(' identifier ')'). ; TODO
+DefaultConstantExpression =
+  (@or 'NULL'
+       ('CURRENT' (@or 'SCHEMA' 'SQLID'))
+       'USER' 'CURRENT_USER' 'SESSION_USER' 'CURRENT_ROLE'
+       'DATE'
+       'TIME'
+       'TIMESTAMP'
+       ('CURRENT' 'DATE') 'CURRENT_DATE'
+       ('CURRENT' 'TIME') 'CURRENT_TIME'
+       ('CURRENT' 'TIMESTAMP') 'CURRENT_TIMESTAMP'
+       ).
+       ;literal).
+
+;literal = ??TODO
+
+simple-column-name = identifier.
+
+column-level-constraint =
+  (@? 'NOT' 'NULL')
+  (@? 'CONSTRAINT' constraint-name)
+  ; (@? 'CHECK' search-condition)  ; TODO
+  (@? (@or ('PRIMARY' 'KEY')
+           ('UNIQUE')
+           references-clause)).
+
+constraint-name = identifier.
+
+references-clause =
+  'REFERENCES' table-name
+  (@? '(' simple-column-name (@* ',' simple-column-name) ')')
+  (@or ((@? on-delete) (@? on-update))
+       ((@? on-update) (@? on-delete))).
+on-delete =
+  'ON' 'DELETE' (@or ('NO' 'ACTION') 'RESTRICT' 'CASCADE' 'SET NULL').
+on-update =
+  'ON' 'UPDATE' (@or ('NO' 'ACTION') 'RESTRICT').
+
+table_level_constraint = 'a\n\'a'.  ; TODO

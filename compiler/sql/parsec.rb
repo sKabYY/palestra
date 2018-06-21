@@ -1,3 +1,4 @@
+require 'pp'
 require './scanner'
 
 module Parsec
@@ -20,8 +21,24 @@ module Parsec
       @scanner.delims = delims
     end
 
+    def set_line_comment(line_comment)
+      @scanner.line_comment = line_comment
+    end
+
+    def set_comment_start(comment_start)
+      @scanner.comment_start = comment_start
+    end
+
+    def set_comment_end(comment_end)
+      @scanner.comment_end = comment_end
+    end
+
     def set_quotation_marks(qms)
       @scanner.quotation_marks = qms
+    end
+
+    def set_regex_marks(rms)
+      @scanner.regex_marks = rms
     end
 
     def def_parser(name, parser)
@@ -35,21 +52,29 @@ module Parsec
       end
     end
 
+    def cDebug(parser)
+      ParserImpl.new do |toks, stk|
+        r = parser.parse(toks, stk)
+        pp r.to_tree
+        r
+      end
+    end
+
     def cIs(type, *ps)
       parser = cSeq(*ps)
       ParserImpl.new do |toks, stk|
         r = parser.parse(toks, stk)
         next r unless r.success?
         _output_node(Node.make_node(type, r.nodes),
-                     r.rest)
+                     r.rest, r.message, r.fail_rest)
       end
     end
 
     def pTokenPred(fail_message='PRED fail')
       ParserImpl.new do |toks, stk|
         tok = toks.car
-        next _output_fail("reach eof", toks) if tok.eof?
-        if yield(tok.type, tok.text)
+        next _output_fail(fail_message, toks) if tok.eof?
+        if yield(tok)
           _output_node(Node.make_leaf(tok), toks.cdr)
         else
           _output_fail(fail_message, toks)
@@ -58,19 +83,28 @@ module Parsec
     end
 
     def pEq(s, case_sensitive=true)
-      p = pTokenPred "expect \"#{s}\"" do |type, text|
+      p = pTokenPred "expect \"#{s}\"" do |tok|
+        next false unless tok.token?
         if case_sensitive
-          text == s
+          tok.text == s
         else
-          text.downcase == s.downcase
+          tok.text.downcase == s.downcase
         end
       end
       cGlob(p)
     end
 
+    def pRegex(regex, fail_message=nil)
+      regex = Regexp.new(regex)
+      pTokenPred(fail_message || "not match #{regex.inspect}") do |tok|
+        next false unless tok.token?
+        !!tok.text.match(regex)
+      end
+    end
+
     def pTokenType(t)
-      pTokenPred "expect <#{t}>" do |type, text|
-        type == t
+      pTokenPred "expect <#{t}>" do |tok|
+        tok.type == t
       end
     end
 
@@ -84,16 +118,29 @@ module Parsec
       return ps.first if ps.length == 1
       ParserImpl.new do |toks, stk|
         fail_result = nil
+        deepest = nil
         results = ps.map do |p|
-          result = p.parse(toks, stk)
-          unless result.success?
-            fail_result = result
+          r = p.parse(toks, stk)
+          unless r.message.nil?
+            deepest = r.deeper(deepest)
+          end
+          unless r.success?
+            fail_result = deepest.fail_result
             break
           end
-          toks = result.rest
-          result
+          toks = r.rest
+          r
         end
-        fail_result || _output_nodes(_merge_results(results), toks)
+        message = deepest.nil? ? nil : deepest.message
+        fail_rest = deepest.nil? ? nil : deepest.fail_rest
+        fail_result || _merge_results(results, toks, message, fail_rest)
+      end
+    end
+
+    def cIfFail(fail_message, parser)
+      ParserImpl.new do |toks, stk|
+        r = parser.parse(toks, stk)
+        r.success? ? r : _output_fail(fail_message, r.rest)
       end
     end
 
@@ -101,7 +148,7 @@ module Parsec
       parser = cSeq(*ps)
       ParserImpl.new do |toks, stk|
         r = parser.parse(toks, stk)
-        r.success? ? _output_empty(r.rest) : r
+        r.success? ? _output_empty(r.rest, r.message, r.fail_rest) : r
       end
     end
 
@@ -115,9 +162,7 @@ module Parsec
             result = r
             break
           end
-          if deepest.nil? or r.rest.offset > deepest.rest.offset
-            deepest = r
-          end
+          deepest = r.deeper(deepest)
         end
         result || deepest || _output_fail('empty OR', toks)
       end
@@ -127,7 +172,7 @@ module Parsec
       parser = cSeq(*ps)
       ParserImpl.new do |toks, stk|
         tok = toks.car
-        next _output_fail('reach eof', toks) if tok.eof?
+        next _output_fail('NOT fail: reach eof', toks) if tok.eof?
         r = parser.parse(toks, stk)
         next _output_fail('NOT fail', toks) if r.success?
         _output_node(Node.make_leaf(tok), toks.cdr)
@@ -138,9 +183,15 @@ module Parsec
       parser = cSeq(*ps)
       ParserImpl.new do |toks, stk|
         results = []
-        while true
+        deepest = nil
+        loop do
           r = parser.parse(toks, stk)
-          break _output_nodes(_merge_results(results), toks) unless r.success?
+          deepest = r.deeper(deepest)
+          unless r.success?
+            break _merge_results(results, toks,
+                                 deepest.message,
+                                 deepest.fail_rest)
+          end
           toks = r.rest
           results << r
         end
@@ -168,36 +219,44 @@ module Parsec
       @env[name] = value
     end
 
-    def _output_nodes(nodes, rest)
+    def _output_nodes(nodes, rest, message=nil, fail_rest=nil)
       r = ParseResult.new
       r.nodes = nodes
       r.rest = rest
+      r.message = message
+      r.fail_rest = fail_rest || rest
       r
     end
 
-    def _output_node(node, rest)
-      _output_nodes([node], rest)
+    def _output_node(node, rest, message=nil, fail_rest=nil)
+      _output_nodes([node], rest, message, fail_rest)
     end
 
-    def _output_empty(rest)
-      _output_nodes([], rest)
+    def _output_empty(rest, message=nil, fail_rest=nil)
+      _output_nodes([], rest, message, fail_rest)
     end
 
     def _output_fail(message, rest)
       r = ParseResult.new
       r.message = message
       r.rest = rest
+      r.fail_rest = rest
       r
     end
 
-    def _merge_results(results)
+    def _merge_results(results, rest, message=nil, fail_rest=nil)
       nodes = []
       results.each do |r|
         r.nodes.each do |node|
           nodes << node
         end
       end
-      nodes
+      if message.nil? and not results.empty?
+        last_r = results.last
+        message = last_r.message
+        fail_rest = last_r.fail_rest
+      end
+      _output_nodes(nodes, rest, message, fail_rest)
     end
 
     class ParserImpl
@@ -212,19 +271,28 @@ module Parsec
   end
 
 
-  class ParseResult < Struct.new(:nodes, :rest, :message)
+  class ParseResult < Struct.new(:nodes, :rest, :message, :fail_rest)
     def success?
       not nodes.nil?
     end
     def pos
       rest.nil? ? -1 : rest.car.start_idx
     end
-    def to_tree
-      if nodes.nil?
-        nil
+    def deeper(r)
+      if r.nil? or r.fail_rest.offset < fail_rest.offset
+        self
       else
-        nodes.map { |n| n.to_tree }
+        r
       end
+    end
+    def fail_result
+      ParseResult.new(nil, rest, message, fail_rest)
+    end
+    def to_tree
+      {nodes: nodes && nodes.map { |n| n.to_tree },
+       message: message,
+       next_tok: rest.car,
+       last_fail: fail_rest.car }
     end
   end
 
@@ -235,7 +303,7 @@ module Parsec
     end
     def to_tree
       if children.nil?
-        "<#{value}>"
+        "#{value}"
       else
         nodes = children.map { |n| n.to_tree }
         nodes.unshift(type)
@@ -272,14 +340,20 @@ module Parsec
     end
     def parse(str)
       toks = @scanner.scan(str).filter_comment
+      #pp toks.to_list
       r = @parser.parse(toks, [])
-      if r.rest.nil? or r.rest.car.eof?
+      #pp r.to_tree
+      if r.rest.eof?
         r
       else
-        fr = ParseResult.new
-        fr.message = "expect <<EOF>>"
-        fr.rest = r.rest
-        fr
+        if r.message.nil?
+          fr = ParseResult.new
+          fr.message = "expect <<EOF>>"
+          fr.rest = r.rest
+          fr
+        else
+          r.fail_result
+        end
       end
     end
   end
@@ -290,6 +364,18 @@ module Parsec
     Grammer.new(p)
   end
 
+  def offset_to_position(str, offset)
+    linenum = 1
+    str.lines.each do |line|
+      linelen = line.length
+      break if linelen > offset
+      offset -= linelen
+      linenum += 1
+    end
+    [linenum, offset]
+  end
+
   module_function :define_grammer
+  module_function :offset_to_position
 
 end

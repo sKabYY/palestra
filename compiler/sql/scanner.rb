@@ -10,6 +10,7 @@ module Parsec
     attr_accessor :comment_end
     attr_accessor :operators
     attr_accessor :quotation_marks
+    attr_accessor :regex_marks
     attr_accessor :lisp_char
     attr_accessor :significant_whitespaces
 
@@ -22,6 +23,7 @@ module Parsec
       @comment_end = nil;
       @operators = [];
       @quotation_marks = ['"'];
+      @regex_marks = [];
       @lisp_char = ['#\\', '?\\']
       @significant_whitespaces = []
     end
@@ -68,15 +70,28 @@ module Parsec
         return Token.make_token(text, start_idx, end_idx)
       end
       # string
-      text, end_idx = _start_with_one_of(str, start_idx, @quotation_marks)
-      unless text.nil?
-        match_data = /#{text}(\\.|[^#{text}])*#{text}/.match(str, start_idx)
+      mark, end_idx = _start_with_one_of(str, start_idx, @quotation_marks)
+      unless mark.nil?
+        match_data = /#{mark}(\\.|[^#{mark}])*#{mark}/.match(str, start_idx)
         if match_data.nil?
           raise ScanException.new('string match error', start_idx, nil)
         end
         match_text = match_data[0]
-        text = match_text[text.length..-(text.length+1)]
+        text = match_text[mark.length..-(mark.length+1)]
+        text = text.gsub("\\#{mark}", "#{mark}")
         return Token.make_str(text, start_idx, start_idx + match_text.length)
+      end
+      # regex
+      mark, end_idx = _start_with_one_of(str, start_idx, @regex_marks)
+      unless mark.nil?
+        match_data = /#{mark}(\\.|[^#{mark}])*#{mark}/.match(str, start_idx)
+        if match_data.nil?
+          raise ScanException.new('regex match error', start_idx, nil)
+        end
+        match_text = match_data[0]
+        text = match_text[mark.length..-(mark.length+1)]
+        text = text.gsub("\\#{mark}", "#{mark}")
+        return Token.make_regex(text, start_idx, start_idx + match_text.length)
       end
       # scheme/elisp char
       # TODO
@@ -221,7 +236,7 @@ module Parsec
     class << self
 
       def token_types
-        [:eof, :newline, :comment, :token, :operator, :str, :literal]
+        [:eof, :newline, :comment, :token, :operator, :str, :regex, :literal]
       end
 
       Token.token_types.each do |type|
