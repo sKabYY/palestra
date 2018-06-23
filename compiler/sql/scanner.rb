@@ -249,23 +249,22 @@ module CCParsec
 
   class Token < Struct.new(:type, :text, :start_idx, :end_idx)
 
-    class << self
-
-      def token_types
-        [:eof, :newline, :comment, :token, :operator, :str, :regex, :literal]
+    def self.method_missing(method, *args)
+      method_name = method.to_s
+      if method_name.start_with?('make_')
+        type = method_name.sub('make_', '')
+        Token.new(type.to_sym, *args)
+      else
+        super(method, *args)
       end
-
-      Token.token_types.each do |type|
-        define_method "make_#{type}" do |text, start_idx, end_idx|
-          Token.new(type, text, start_idx, end_idx)
-        end
-      end
-
     end
 
-    token_types.each do |type|
-      define_method "#{type}?" do
-        self.type == type
+    def method_missing(method, *args)
+      method_name = method.to_s
+      if method_name.end_with?('?')
+        "#{type}?" == method_name
+      else
+        super(method, *args)
       end
     end
 

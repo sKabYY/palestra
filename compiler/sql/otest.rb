@@ -4,7 +4,7 @@ require 'pp'
 
 module TestOracle
   puts "start #{self}"
-  require './oracle_analysis'
+  require './oracle_analyser'
   code = <<EOF
 create table MESSAGE_NOTIFY_TASK
 (
@@ -18,4 +18,6 @@ create table MESSAGE_NOTIFY_TASK
 EOF
   ast = Oracle::parse(code)
   pp ast.to_tree
+
+  pp Oracle::analyse(code)
 end

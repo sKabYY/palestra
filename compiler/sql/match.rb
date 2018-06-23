@@ -29,7 +29,7 @@ module CCParsec
     end
   end
 
-  class Parsec
+  module Match
     def match(node, &block)
       m = NodeMatcher.new(self, node)
       m.instance_eval(&block)

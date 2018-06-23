@@ -33,7 +33,7 @@ module TestXCcc
   if ast.success?
     pp ast
   else
-    puts "#{ast.message} at #{ast.pos}"
+    puts "#{ast.message} at #{ast.rest.inspect}"
     pp ast.rest.car
   end
 
@@ -67,7 +67,4 @@ end
 
 puts
 
-module TestOracle
-  puts "start #{self}"
-  require './oracle_checker'
-end
+require './otest'

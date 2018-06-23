@@ -1,15 +1,15 @@
-class C
+module MM extend self
+
+  puts self
+
+def f
+  g
 end
 
-c = C.new
-
-c.instance_eval do
-  self.class.send :define_method, :f do
-    'haha'
-  end
+def g
+  12
 end
 
-p c.f
+p g
 
-c2 = C.new
-p c2.f
+end

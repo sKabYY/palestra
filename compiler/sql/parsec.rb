@@ -102,9 +102,9 @@ module CCParsec
       end
     end
 
-    def pTokenType(t)
-      pTokenPred "expect <#{t}>" do |tok|
-        tok.type == t
+    def pTokenType(type)
+      pTokenPred "expect <#{type}>" do |tok|
+        tok.send "#{type}?"
       end
     end
 

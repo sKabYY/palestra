@@ -59,6 +59,8 @@ module CCParsec
   def xccc_ast_to_grammer(ast, &block)
     define_grammer do
 
+      extend Match
+
       @case_sensitive = true
 
       unless block.nil?
