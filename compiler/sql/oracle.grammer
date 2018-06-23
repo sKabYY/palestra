@@ -4,7 +4,8 @@ stms = (@+ stm ';').
 
 stm = (@or create_table:create-table-stm).
 
-identifier = /^[[:alnum:]_]+$/. ; TODO
+identifier = (@! (@or (@! /^[[:alnum:]_]+$/)
+                      'CONSTRAINT')). ; TODO
 
 create-table-stm =
   'CREATE' 'TABLE' table-name '('
@@ -13,14 +14,30 @@ create-table-stm =
 
 table-name = identifier.
 
-create-table-item = (@or column-definition table-level-constraint).
+create-table-item = (@or column_definition:column-definition
+                         constraint:table-level-constraint).
 
 column-definition =
   simple-column-name DataType
   (@* column-level-constraint)
   (@? (@? 'WITH') 'DEFAULT' DefaultConstantExpression)
   (@* column-level-constraint).
-DataType = identifier (@? '(' identifier ')'). ; TODO
+DataType =
+  (@or character-datatype
+       number-datatype
+       datetime-datatype
+       large-object-datatype).
+character-datatype =
+  varchar2:('VARCHAR2' '(' size ')').
+number-datatype =
+  (@or number:('NUMBER' (@? '(' size ')'))  ; TODO precision
+       float:('FLOAT' (@? '(' size ')'))).
+datetime-datatype =
+  (@or date:'DATE' timestamp:'TIMESTAMP').  ; TODO
+large-object-datatype =
+  (@or blob:'BLOB' clob:'CLOB' nclob:'NCLOB' bfile:'BFILE').
+size = /\d+/.
+;DataType = identifier (@? '(' identifier ')'). ; TODO
 DefaultConstantExpression =
   (@or 'NULL'
        ('CURRENT' (@or 'SCHEMA' 'SQLID'))
@@ -37,20 +54,21 @@ DefaultConstantExpression =
 ;literal = ??TODO
 
 simple-column-name = identifier.
+simple-column-names = simple-column-name (@* ',' simple-column-name).
 
 column-level-constraint =
-  (@? 'NOT' 'NULL')
   (@? 'CONSTRAINT' constraint-name)
-  ; (@? 'CHECK' search-condition)  ; TODO
-  (@? (@or ('PRIMARY' 'KEY')
-           ('UNIQUE')
-           references-clause)).
+  (@or not_null:('NOT' 'NULL')
+       ; check:('CHECK' search-condition)  ; TODO
+       primary_key:('PRIMARY' 'KEY')
+       unique:('UNIQUE')
+       references_clause:references-clause).
 
 constraint-name = identifier.
 
 references-clause =
   'REFERENCES' table-name
-  (@? '(' simple-column-name (@* ',' simple-column-name) ')')
+  (@? '(' simple-column-names ')')
   (@or ((@? on-delete) (@? on-update))
        ((@? on-update) (@? on-delete))).
 on-delete =
@@ -58,4 +76,10 @@ on-delete =
 on-update =
   'ON' 'UPDATE' (@or ('NO' 'ACTION') 'RESTRICT').
 
-table_level_constraint = 'a\n\'a'.  ; TODO
+table-level-constraint =
+  (@? 'CONSTRAINT' constraint-name)
+  (@or ; check:('CHECK' search-condition)  ; TODO
+       primary_key:('PRIMARY' 'KEY' '(' simple-column-names ')')
+       unique:('UNIQUE' '(' simple-column-names ')')
+       foreign_key:('FOREIGN' 'KEY' '(' simple-column-names ')'
+                              references-clause)).

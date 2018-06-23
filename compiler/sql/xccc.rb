@@ -3,11 +3,12 @@
 require './parsec'
 require './match'
 
-module Parsec
+module CCParsec
 
   _xccc_grammer = define_grammer do
 
-    set_delims ['(', ')', '[', ']', '{', '}', '`', ',', '::', '=', ':', '.']
+    set_delims ['(', ')', '[', ']', '{', '}', '`', ',',
+                '::', '=', ':', '.', '??']
     set_quotation_marks ['\'']
     set_regex_marks ['/']
 
@@ -33,9 +34,13 @@ module Parsec
     named_exp = cSeq(var, pEq(':'), get(:exp))
     op_exp = cSeq(lparen, cmb_op, cStar(get(:exp)), rparen)
     seq_exp = cSeq(lparen, cPlus(get(:exp)), rparen)
+    dbg_exp = cSeq(pEq('['), cPlus(get(:exp)), pEq(']'))
+    dbg_1exp = cSeq(pEq('??'), get(:exp))
     exp = def_parser(:exp, cOr(cIs(:named_exp, named_exp),
                                cIs(:op_exp, op_exp),
                                cIs(:seq_exp, seq_exp),
+                               cIs(:dbg_exp, dbg_exp),
+                               cIs(:dbg_1exp, dbg_1exp),
                                cIs(:word_exp, word),
                                cIs(:regex_exp, regex),
                                cIs(:var_exp, var)))
@@ -54,6 +59,8 @@ module Parsec
   def xccc_ast_to_grammer(ast, &block)
     define_grammer do
 
+      @case_sensitive = true
+
       unless block.nil?
         self.instance_eval(&block)
       end
@@ -63,46 +70,54 @@ module Parsec
       def_stms = nodes[1..-1]
       root_name = root_stm.children.first.value.to_sym
 
-      self.class.send :define_method, :apply_op do |op, ps|
-        match op, self do
-          type :plus_cmb do || cPlus(*ps) end
-          type :star_cmb do || cStar(*ps) end
-          type :or_cmb do cOr(*ps) end
-          type :seq_cmb do cSeq(*ps) end
-          type :not_cmb do cNot(*ps) end
-          type :maybe_cmb do cMaybe(*ps) end
+      class << self
+        def apply_op(op, ps)
+          match op do
+            type :plus_cmb do || cPlus(*ps) end
+            type :star_cmb do || cStar(*ps) end
+            type :or_cmb do cOr(*ps) end
+            type :seq_cmb do cSeq(*ps) end
+            type :not_cmb do cNot(*ps) end
+            type :maybe_cmb do cMaybe(*ps) end
+          end
         end
-      end
-
-      self.class.send :define_method, :value_of do |exp|
-        match exp, self do
-          type :named_exp do |var, e|
-            name = var.value.to_sym
-            cIs(name, value_of(e))
-          end
-          type :op_exp do |op, *es|
-            ps = es.map { |e| value_of(e) }
-            apply_op(op, ps)
-          end
-          type :seq_exp do |*es|
-            ps = es.map { |e| value_of(e) }
-            cSeq(*ps)
-          end
-          type :word_exp do |word|
-            pEq(word.value, false)  # TODO
-          end
-          type :regex_exp do |regex|
-            pRegex(regex.value)
-          end
-          type :var_exp do |var|
-            name = var.value.to_sym
-            get(name)
+        def value_of(exp)
+          match exp do
+            type :named_exp do |var, e|
+              name = var.value.to_sym
+              cIs(name, value_of(e))
+            end
+            type :op_exp do |op, *es|
+              ps = es.map { |e| value_of(e) }
+              apply_op(op, ps)
+            end
+            type :seq_exp do |*es|
+              ps = es.map { |e| value_of(e) }
+              cSeq(*ps)
+            end
+            type :dbg_exp do |*es|
+              ps = es.map { |e| value_of(e) }
+              cDebug(cSeq(*ps))
+            end
+            type :dbg_1exp do |e|
+              cDebug(value_of(e))
+            end
+            type :word_exp do |word|
+              pEq(word.value, @case_sensitive)
+            end
+            type :regex_exp do |regex|
+              pRegex(regex.value)
+            end
+            type :var_exp do |var|
+              name = var.value.to_sym
+              get(name)
+            end
           end
         end
       end
 
       def_stms.each do |def_stm|
-        match def_stm, self do
+        match def_stm do
           type :def_stm do |var, *es|
             name = var.value.to_sym
             ps = es.map { |e| value_of(e) }
@@ -120,8 +135,7 @@ module Parsec
   def xccc_define_grammer(str, &block)
     ast = xccc_grammer.parse(str)
     unless ast.success?
-      linenum, colnum = offset_to_position(str, ast.fail_rest.car.start_idx)
-      raise "(#{linenum}, #{colnum}){ message: #{ast.message}, next_tok: #{ast.fail_rest.car.inspect} }"
+      raise "parsing grammer failed: { message: \"#{ast.message}\", rest: #{ast.fail_rest.inspect} }"
     end
     xccc_ast_to_grammer(ast.nodes.first, &block)
   end

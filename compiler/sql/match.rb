@@ -1,6 +1,6 @@
 require './parsec'
 
-module Parsec
+module CCParsec
 
   class NodeMatcher
     def initialize(ctx, node)
@@ -19,7 +19,7 @@ module Parsec
     def default(&proc)
       @default = proc
     end
-    def do_match(ctx)
+    def do_match()
       proc = @proc_map[@node.type]
       if proc.nil?
         @default.call(@node.type)
@@ -30,10 +30,10 @@ module Parsec
   end
 
   class Parsec
-    def match(node, ctx, &block)
-      m = NodeMatcher.new(ctx, node)
+    def match(node, &block)
+      m = NodeMatcher.new(self, node)
       m.instance_eval(&block)
-      m.do_match(ctx)
+      m.do_match()
     end
   end
 

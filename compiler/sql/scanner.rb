@@ -1,4 +1,4 @@
-module Parsec
+module CCParsec
 
   require 'stringio'
 
@@ -132,6 +132,8 @@ module Parsec
 
     class TokenStream < BaseStream
 
+      attr_reader :str
+
       def initialize(scanner, str, pos=0)
         @scanner = scanner
         @str = str
@@ -140,7 +142,7 @@ module Parsec
       end
 
       def inspect
-        "<TokenStream,car=#{car}>"
+        "<TokenStream,car=#{car.pretty_str(@str)}>"
       end
 
       def car
@@ -165,6 +167,11 @@ module Parsec
         end
       end
 
+      def ==(obj)
+        return false unless obj.is_a?(TokenStream)
+        offset == obj.offset and str == obj.str
+      end
+
     end
 
     class FilteredStream < BaseStream
@@ -177,8 +184,12 @@ module Parsec
         @pred = block
       end
 
+      def orig_stream
+        @stream
+      end
+
       def inspect
-        "<FilteredTokenStream,car=#{car}>"
+        "<FilteredTokenStream,car=#{car.pretty_str(@stream.str)}>"
       end
 
       def car
@@ -195,6 +206,11 @@ module Parsec
 
       def eof?
         self.car.eof?
+      end
+
+      def ==(obj)
+        return false unless obj.is_a?(FilteredStream)
+        orig_stream == obj.orig_stream
       end
 
     end
@@ -251,6 +267,23 @@ module Parsec
       define_method "#{type}?" do
         self.type == type
       end
+    end
+
+    def _offset_to_position(str, offset)
+      linenum = 1
+      str.lines.each do |line|
+        linelen = line.length
+        break if linelen > offset
+        offset -= linelen
+        linenum += 1
+      end
+      [linenum, offset]
+    end
+
+    def pretty_str(str)
+      start_ln, start_cn = _offset_to_position(str, start_idx)
+      end_ln, end_cn = _offset_to_position(str, end_idx)
+      "#<Token type=:#{type}, text=\"#{text}\", from=(#{start_ln}, #{start_cn}), to=(#{end_ln}, #{end_cn})>"
     end
 
   end

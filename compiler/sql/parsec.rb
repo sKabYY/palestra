@@ -1,7 +1,7 @@
 require 'pp'
 require './scanner'
 
-module Parsec
+module CCParsec
 
   class Parsec
 
@@ -46,7 +46,7 @@ module Parsec
     end
 
     def get(name)
-      ParserImpl.new do |toks, stk|
+      ParserImpl.new name do |toks, stk|
         parser = _env_get(name)
         parser.parse(toks, stk)
       end
@@ -55,7 +55,7 @@ module Parsec
     def cDebug(parser)
       ParserImpl.new do |toks, stk|
         r = parser.parse(toks, stk)
-        pp r.to_tree
+        puts "===[Debug]===\n#{r.to_tree.pretty_inspect}"
         r
       end
     end
@@ -188,9 +188,13 @@ module Parsec
           r = parser.parse(toks, stk)
           deepest = r.deeper(deepest)
           unless r.success?
-            break _merge_results(results, toks,
-                                 deepest.message,
-                                 deepest.fail_rest)
+            result = _merge_results(results, toks,
+                                    deepest.message,
+                                    deepest.fail_rest)
+            break result
+          end
+          if toks == r.rest
+            Parsec.fatal("empty-star detected", parser, toks, stk)
           end
           toks = r.rest
           results << r
@@ -260,11 +264,30 @@ module Parsec
     end
 
     class ParserImpl
-      def initialize(&block)
+      def initialize(name=nil, &block)
+        @name = name
         @parse = block
       end
       def parse(toks, stk)
-        @parse.call(toks, stk)
+        if stk.has?(self, toks)
+          Parsec.fatal("left-recursion detected", self, toks, stk)
+        end
+        @parse.call(toks, stk.extend(self, toks))
+      end
+      def ==(obj)
+        equal?(obj)
+      end
+      def inspect
+        @name.nil? ? super : "<Parser:#{@name}>"
+      end
+    end
+
+    class << self
+      def fatal(message, parser, toks, stk)
+        raise message + "\n" +
+              "parser: #{parser.inspect}\n" +
+              "rest: #{toks.inspect}" +
+              "stack trace: #{stk.to_list.pretty_inspect}"
       end
     end
 
@@ -289,10 +312,11 @@ module Parsec
       ParseResult.new(nil, rest, message, fail_rest)
     end
     def to_tree
-      {nodes: nodes && nodes.map { |n| n.to_tree },
+      {success?: success?,
+       nodes: nodes && nodes.map { |n| n.to_tree },
        message: message,
-       next_tok: rest.car,
-       last_fail: fail_rest.car }
+       rest: rest,
+       fail_rest: fail_rest}
     end
   end
 
@@ -333,6 +357,29 @@ module Parsec
     end
   end
 
+  class Stack < Struct.new(:parser, :toks, :prev)
+    def initialize(p=nil, s=nil, pr=nil)
+      super(p, s, pr)
+    end
+    def has?(p, s)
+      return true if p == parser and s == toks
+      return false if prev.nil?
+      prev.has?(p, s)
+    end
+    def extend(p, s)
+      Stack.new(p, s, self)
+    end
+    def to_list
+      stk = self
+      list = []
+      until stk.nil?
+        list << {parser: stk.parser, toks: stk.toks}
+        stk = stk.prev
+      end
+      list
+    end
+  end
+
   class Grammer
     def initialize(p)
       @scanner = p.scanner
@@ -341,7 +388,7 @@ module Parsec
     def parse(str)
       toks = @scanner.scan(str).filter_comment
       #pp toks.to_list
-      r = @parser.parse(toks, [])
+      r = @parser.parse(toks, Stack.new)
       #pp r.to_tree
       if r.rest.eof?
         r
@@ -364,18 +411,6 @@ module Parsec
     Grammer.new(p)
   end
 
-  def offset_to_position(str, offset)
-    linenum = 1
-    str.lines.each do |line|
-      linelen = line.length
-      break if linelen > offset
-      offset -= linelen
-      linenum += 1
-    end
-    [linenum, offset]
-  end
-
   module_function :define_grammer
-  module_function :offset_to_position
 
 end

@@ -4,9 +4,9 @@ require 'pp'
 
 module TestOracle
   puts "start #{self}"
-  require './oracle_checker'
+  require './oracle_analysis'
   code = <<EOF
-create table MESSAGE_NOTIFY_TASK 
+create table MESSAGE_NOTIFY_TASK
 (
    PK_ID                varchar2(32)         not null,
    FLIGHT_ID            varchar2(32)         not null,
@@ -16,6 +16,6 @@ create table MESSAGE_NOTIFY_TASK
    constraint PK_MESSAGE_NOTIFY_TASK primary key (PK_ID)
 );
 EOF
-  ast = Oracle::parser.parse(code)
+  ast = Oracle::parse(code)
   pp ast.to_tree
 end

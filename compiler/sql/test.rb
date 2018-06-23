@@ -12,7 +12,7 @@ aa(cc"kk\\"kk"("ss")aa;c
 /*te\nst*/;ac
 EOF
   p s
-  scanner = Parsec::Scanner.new
+  scanner = CCParsec::Scanner.new
   scanner.comment_start = '/*'
   scanner.comment_end = '*/'
   stream = scanner.scan(s)
@@ -29,7 +29,7 @@ module TestXCcc
   require './xccc'
 
   str = IO.read('sexp.grammer')
-  ast = Parsec::xccc_grammer.parse(str)
+  ast = CCParsec::xccc_grammer.parse(str)
   if ast.success?
     pp ast
   else
@@ -48,7 +48,7 @@ module TestXCcc
   puts "start #{self}"
 
   str = IO.read('sexp.grammer')
-  grammer = Parsec::xccc_define_grammer(str) do
+  grammer = CCParsec::xccc_define_grammer(str) do
     p 'init'
   end
   #sexp_code = '(x y)'
