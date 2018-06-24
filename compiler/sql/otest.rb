@@ -6,7 +6,7 @@ module TestOracle
   puts "start #{self}"
   require './oracle_analyser'
   code = <<EOF
-create table MESSAGE_NOTIFY_TASK
+create table dsp_adm.MESSAGE_NOTIFY_TASK
 (
    PK_ID                varchar2(32)         not null,
    FLIGHT_ID            varchar2(32)         not null,

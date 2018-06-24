@@ -35,8 +35,8 @@ module Oracle
 
     def analyse_stm(stm)
       match stm do
-        type :create_table do |table_name, *coldef_or_constraint|
-          puts "creating table \"#{table_name.value}\" with:"
+        type :create_table do |table, *coldef_or_constraint|
+          puts "creating table #{table.children.map{|n| n.value}} with:"
           pp coldef_or_constraint.map { |c| c.to_tree }
           [1,2]
         end

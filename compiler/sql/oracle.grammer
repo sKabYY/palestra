@@ -8,10 +8,12 @@ identifier = (@! (@or (@! /^[[:alnum:]_]+$/)
                       'CONSTRAINT')). ; TODO
 
 create-table-stm =
-  'CREATE' 'TABLE' table-name '('
+  'CREATE' 'TABLE' table '('
     create-table-item (@* ',' create-table-item)
   ')'.
 
+table = table:((@? schema-name '.') table-name).
+schema-name = identifier.
 table-name = identifier.
 
 create-table-item = (@or column_definition:column-definition
@@ -67,7 +69,7 @@ column-level-constraint =
 constraint-name = identifier.
 
 references-clause =
-  'REFERENCES' table-name
+  'REFERENCES' table
   (@? '(' simple-column-names ')')
   (@or ((@? on-delete) (@? on-update))
        ((@? on-update) (@? on-delete))).
