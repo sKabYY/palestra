@@ -28,9 +28,9 @@ module Oracle
       unless ast.success?
         raise "parsing failed: { message: \"#{ast.message}\", rest: #{ast.fail_rest.inspect} }"
       end
-      stms = ast.nodes
-      stms.map { |stm| analyse_stm(stm) }
-        .inject { |s, l| s + l }
+      #stms = ast.nodes
+      #stms.map { |stm| analyse_stm(stm) }
+      #  .inject { |s, l| s + l }
     end
 
     def analyse_stm(stm)
@@ -38,8 +38,12 @@ module Oracle
         type :create_table do |table, *coldef_or_constraint|
           puts "creating table #{table.children.map{|n| n.value}} with:"
           pp coldef_or_constraint.map { |c| c.to_tree }
-          [1,2]
         end
+        type :comment do |*ns|
+          puts "creating comment:"
+          pp ns.map { |c| c.to_tree }
+        end
+        # TODO
       end
     end
 

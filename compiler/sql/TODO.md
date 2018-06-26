@@ -1,5 +1,4 @@
-* schema
-* comment
-* grant & synonym
+* number/float type
+* ErrInfo
 * DataType
 * literal

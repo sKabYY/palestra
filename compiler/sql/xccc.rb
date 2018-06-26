@@ -7,25 +7,23 @@ module CCParsec
 
   _xccc_grammer = define_grammer do
 
-    set_delims ['(', ')', '[', ']', '{', '}', '`', ',',
-                '::', '=', ':', '.', '??']
+    set_delims ['(', ')', '[', ']', '{', '}', '<', '>',
+                '`', '::', '=', ':', '.', '??']
     set_quotation_marks ['\'']
     set_regex_marks ['/']
+    set_comment_start ';*'
+    set_comment_end '*;'
 
     lparen = pEq('(')
     rparen = pEq(')')
     word = pTokenType(:str)
     regex = pTokenType(:regex)
     var = cIfFail('invalid var', pRegex(/^[[:alnum:]_-]+$/))
-    cplus = pEq('@+')
-    cplus = pEq('@*')
-    cor = pEq('@or')
-    cseq = pEq('@..')
-    cnot = pEq('@!')
-    cmaybe = pEq('@?')
     cmb_op = cIfFail('unknown op',
                      cOr(cIs(:plus_cmb, pEq('@+')),
                          cIs(:star_cmb, pEq('@*')),
+                         cIs(:join_cmb, pEq('@,*')),
+                         cIs(:join_plus_cmb, pEq('@,+')),
                          cIs(:or_cmb, pEq('@or')),
                          cIs(:seq_cmb, pEq('@..')),
                          cIs(:not_cmb, pEq('@!')),
@@ -35,10 +33,12 @@ module CCParsec
     op_exp = cSeq(lparen, cmb_op, cStar(get(:exp)), rparen)
     seq_exp = cSeq(lparen, cPlus(get(:exp)), rparen)
     dbg_exp = cSeq(pEq('['), cPlus(get(:exp)), pEq(']'))
+    token_type_exp = cSeq(pEq('<'), pRegex(/^[[:alnum:]_]+$/) , pEq('>'))
     dbg_1exp = cSeq(pEq('??'), get(:exp))
     exp = def_parser(:exp, cOr(cIs(:named_exp, named_exp),
                                cIs(:op_exp, op_exp),
                                cIs(:seq_exp, seq_exp),
+                               cIs(:token_type_exp, token_type_exp),
                                cIs(:dbg_exp, dbg_exp),
                                cIs(:dbg_1exp, dbg_1exp),
                                cIs(:word_exp, word),
@@ -79,6 +79,8 @@ module CCParsec
             type :star_cmb do || cStar(*ps) end
             type :or_cmb do cOr(*ps) end
             type :seq_cmb do cSeq(*ps) end
+            type :join_cmb do cJoin(*ps) end
+            type :join_plus_cmb do cJoinPlus(*ps) end
             type :not_cmb do cNot(*ps) end
             type :maybe_cmb do cMaybe(*ps) end
           end
@@ -96,6 +98,9 @@ module CCParsec
             type :seq_exp do |*es|
               ps = es.map { |e| value_of(e) }
               cSeq(*ps)
+            end
+            type :token_type_exp do |token_type|
+              pTokenType(token_type.value)
             end
             type :dbg_exp do |*es|
               ps = es.map { |e| value_of(e) }

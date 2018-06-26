@@ -43,6 +43,13 @@ module CCParsec
       if _whitespace?(str[start_idx])
         return scan1(str, start_idx + 1)
       end
+      # block comment
+      text, end_idx = _start_with(str, start_idx, @comment_start)
+      unless text.nil?
+        end_idx = _find_next(str, end_idx, @comment_end)
+        end_idx = end_idx.nil? ? str.length : end_idx + @comment_end.length
+        return Token.make_comment(str[start_idx..end_idx-1], start_idx, end_idx)
+      end
       # line coment
       text, end_idx = _start_with_one_of(str, start_idx, @line_comment)
       unless text.nil?
@@ -50,13 +57,6 @@ module CCParsec
         if end_idx.nil?
           end_idx = str.length
         end
-        return Token.make_comment(str[start_idx..end_idx-1], start_idx, end_idx)
-      end
-      # block comment
-      text, end_idx = _start_with(str, start_idx, @comment_start)
-      unless text.nil?
-        end_idx = _find_next(str, end_idx, @comment_end)
-        end_idx = end_idx.nil? ? str.length : end_idx + @comment_end.length
         return Token.make_comment(str[start_idx..end_idx-1], start_idx, end_idx)
       end
       # delim

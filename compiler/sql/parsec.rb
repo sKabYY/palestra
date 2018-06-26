@@ -52,7 +52,8 @@ module CCParsec
       end
     end
 
-    def cDebug(parser)
+    def cDebug(*ps)
+      parser = cSeq(*ps)
       ParserImpl.new do |toks, stk|
         r = parser.parse(toks, stk)
         puts "===[Debug]===\n#{r.to_tree.pretty_inspect}"
@@ -208,8 +209,15 @@ module CCParsec
     end
 
     def cPlus(*ps)
-      parser = cSeq(*ps)
-      cSeq(parser, cStar(parser))
+      cSeq(*ps, cStar(*ps))
+    end
+
+    def cJoin(sep_parser, *ps)
+      cMaybe(cJoinPlus(sep_parser, *ps))
+    end
+
+    def cJoinPlus(sep_parser, *ps)
+      cSeq(*ps, cStar(sep_parser, *ps))
     end
 
     def _env_get(name)

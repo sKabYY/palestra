@@ -2,17 +2,27 @@
 
 stms = (@+ stm ';').
 
-stm = (@or create_table:create-table-stm).
+stm = (@or create_table:create-table-stm
+           comment:comment-stm
+           create_index:create-index-stm
+           grant:grant-stm
+           create_synonym:create-synonym-stm
+).
 
 identifier = (@! (@or (@! /^[[:alnum:]_]+$/)
                       'CONSTRAINT')). ; TODO
 
+string = <str>.
+
+;;; CREATE TABLE
+
 create-table-stm =
   'CREATE' 'TABLE' table '('
-    create-table-item (@* ',' create-table-item)
+    (@,+ ',' create-table-item)
   ')'.
 
-table = table:((@? schema-name '.') table-name).
+table = table:(schema-prefix table-name).
+schema-prefix = (@? schema-name '.').
 schema-name = identifier.
 table-name = identifier.
 
@@ -50,13 +60,12 @@ DefaultConstantExpression =
        ('CURRENT' 'DATE') 'CURRENT_DATE'
        ('CURRENT' 'TIME') 'CURRENT_TIME'
        ('CURRENT' 'TIMESTAMP') 'CURRENT_TIMESTAMP'
-       ).
-       ;literal).
+       ;*literal*;).
 
 ;literal = ??TODO
 
 simple-column-name = identifier.
-simple-column-names = simple-column-name (@* ',' simple-column-name).
+simple-column-names = (@,+ ',' simple-column-name).
 
 column-level-constraint =
   (@? 'CONSTRAINT' constraint-name)
@@ -85,3 +94,65 @@ table-level-constraint =
        unique:('UNIQUE' '(' simple-column-names ')')
        foreign_key:('FOREIGN' 'KEY' '(' simple-column-names ')'
                               references-clause)).
+
+;;; COMMENT
+
+comment-stm =
+  'COMMENT' 'ON'
+  (@or table_comment:('TABLE' table)
+       column_comment:('COLUMN' (@or (table '.' simple-column-name)
+                                     (table:table-name '.' simple-column-name)))
+       operator_comment:('OPERATOR' schema-prefix identifier)
+       indextype_comment:('INDEXTYPE' schema-prefix identifier)
+       materialized_view_comment:('MATERIALIZED' 'VIEW' identifier))
+  'IS' string.
+
+;;; CREATE INDEX
+
+create-index-stm =
+  'CREATE' index_type:(@? (@or unique:'UNIQUE' bitmap:'BITMAP')) 'INDEX'
+  object:(schema-prefix identifier) 'ON'
+  (@or ;*cluster-index-clause*;
+       table-index-clause
+       ;*bitmap-join-index-clause*;).
+
+column = t_alias:(@? identifier '.') simple-column-name.
+
+table-index-clause =
+  table t_alias:(@? identifier) '('
+    indexes:(@,+ ',' index:(index_expr (@? (@or asc:'ASC' desc:'DESC'))))
+  ')' ;*(@? index_properties)*;.
+
+index_expr = (@or column ;*column_expression*;).
+
+;;; GRANT
+
+grant-stm =
+  'GRANT' (@or ;*grant-system-privileges*;
+               grant-object-privileges).
+
+grant-object-privileges =
+  (@,+ ','
+       privilege:((@or object-privilege ('ALL' (@? 'PRIVILEGES')))
+                  columns:(@? '(' (@,+ ',' simple-column-name) ')')))
+  'ON' object:(schema-prefix identifier)  ; TODO: DIRECTORY & JAVA
+  'TO' grantee:(@,+ ',' (@or role_or_user:(identifier
+                                           (@? 'IDENTIFIED' 'BY' string))
+                             public:'PUBLIC'))
+  hierarchy_option:(@? hierarchy:('WITH' 'HIERARCHY' 'OPTION'))
+  grant_option:(@? grant:('WITH' 'GRANT' 'OPTION')).
+
+object-privilege =
+  (@or alter:'ALTER' delete:'DELETE' execute:'EXECUTE' debug:'DEBUG'
+       flashback:'FLASHBACK' index:'INDEX' insert:'INSERT'
+       on_commit_refresh:('ON' 'COMMIT' 'REFRESH')
+       query_rewrite:('QUERY' 'REWRITE')
+       read:'READ' references:'REFERENCES' select:'SELECT' under:'UNDER'
+       update:'UPDATE' write:'WRITE').
+
+;;; CREATE SYNONYM
+create-synonym-stm =
+  'CREATE' replace_option:(@? replace:'OR' 'REPLACE')
+           public_option:(@? public:'PUBLIC')
+  'SYNONYM' synonym:(schema-prefix identifier)
+  'FOR' object:(schema-prefix identifier ;*(@? '@' dblink)*;).
