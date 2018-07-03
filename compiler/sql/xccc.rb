@@ -11,8 +11,8 @@ module CCParsec
                 '`', '::', '=', ':', '.', '??']
     set_quotation_marks ['\'']
     set_regex_marks ['/']
-    set_comment_start ';*'
-    set_comment_end '*;'
+    set_comment_start '#|'
+    set_comment_end '|#'
 
     lparen = pEq('(')
     rparen = pEq(')')
@@ -70,7 +70,7 @@ module CCParsec
       nodes = ast.children
       root_stm = nodes.first
       def_stms = nodes[1..-1]
-      root_name = root_stm.children.first.value.to_sym
+      root_name = root_stm.leaf_value.to_sym
 
       class << self
         def apply_op(op, ps)

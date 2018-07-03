@@ -8,7 +8,7 @@ module CCParsec
       @node = node
       @proc_map = {}
       @default = Proc.new do |t|
-        raise "match error: unknown type :#{t}"
+        raise "match error: unknown type :#{t.inspect}(#{t.class})"
       end
     end
     def type(t, &proc)
@@ -31,6 +31,9 @@ module CCParsec
 
   module Match
     def match(node, &block)
+      unless node.is_a? Node
+        raise "#{node.inspect}(#{node.class}) is not a Node"
+      end
       m = NodeMatcher.new(self, node)
       m.instance_eval(&block)
       m.do_match()

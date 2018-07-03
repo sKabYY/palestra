@@ -58,7 +58,7 @@ module TestXCcc
 EOF
   ast = grammer.parse(sexp_code)
   if ast.success?
-    pp ast.to_tree
+    pp ast.to_sexp
   else
     pp ast
   end

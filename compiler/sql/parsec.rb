@@ -56,7 +56,7 @@ module CCParsec
       parser = cSeq(*ps)
       ParserImpl.new do |toks, stk|
         r = parser.parse(toks, stk)
-        puts "===[Debug]===\n#{r.to_tree.pretty_inspect}"
+        puts "===[Debug]===\n#{r.to_sexp.pretty_inspect}"
         r
       end
     end
@@ -66,7 +66,7 @@ module CCParsec
       ParserImpl.new do |toks, stk|
         r = parser.parse(toks, stk)
         next r unless r.success?
-        _output_node(Node.make_node(type, r.nodes),
+        _output_node(Node.make_node(type, r.nodes, r.start_idx, r.end_idx),
                      r.rest, r.message, r.fail_rest)
       end
     end
@@ -111,7 +111,7 @@ module CCParsec
 
     def pEmpty
       ParserImpl.new do |toks, stk|
-        _output_empty(toks)
+        _output_empty(toks, toks.offset, toks.offset)
       end
     end
 
@@ -149,7 +149,7 @@ module CCParsec
       parser = cSeq(*ps)
       ParserImpl.new do |toks, stk|
         r = parser.parse(toks, stk)
-        r.success? ? _output_empty(r.rest, r.message, r.fail_rest) : r
+        r.success? ? _output_empty(r.rest, r.start_idx, r.end_idx, r.message, r.fail_rest) : r
       end
     end
 
@@ -231,29 +231,31 @@ module CCParsec
       @env[name] = value
     end
 
-    def _output_nodes(nodes, rest, message=nil, fail_rest=nil)
-      r = ParseResult.new
-      r.nodes = nodes
-      r.rest = rest
-      r.message = message
-      r.fail_rest = fail_rest || rest
-      r
+    def _output_nodes(nodes, rest, start_idx, end_idx, message=nil, fail_rest=nil)
+      ParseResult.new.tap do |r|
+        r.nodes = nodes
+        r.rest = rest
+        r.message = message
+        r.fail_rest = fail_rest || rest
+        r.start_idx = start_idx
+        r.end_idx = end_idx
+      end
     end
 
     def _output_node(node, rest, message=nil, fail_rest=nil)
-      _output_nodes([node], rest, message, fail_rest)
+      _output_nodes([node], rest, node.start_idx, node.end_idx, message, fail_rest)
     end
 
-    def _output_empty(rest, message=nil, fail_rest=nil)
-      _output_nodes([], rest, message, fail_rest)
+    def _output_empty(rest, start_idx, end_idx, message=nil, fail_rest=nil)
+      _output_nodes([], rest, start_idx, end_idx, message, fail_rest)
     end
 
     def _output_fail(message, rest)
-      r = ParseResult.new
-      r.message = message
-      r.rest = rest
-      r.fail_rest = rest
-      r
+      ParseResult.new.tap do |r|
+        r.message = message
+        r.rest = rest
+        r.fail_rest = rest
+      end
     end
 
     def _merge_results(results, rest, message=nil, fail_rest=nil)
@@ -268,7 +270,9 @@ module CCParsec
         message = last_r.message
         fail_rest = last_r.fail_rest
       end
-      _output_nodes(nodes, rest, message, fail_rest)
+      start_idx = results.empty? ? rest.offset: results.first.start_idx
+      end_idx = results.empty? ? rest.offset: results.last.end_idx
+      _output_nodes(nodes, rest, start_idx, end_idx, message, fail_rest)
     end
 
     class ParserImpl
@@ -302,12 +306,9 @@ module CCParsec
   end
 
 
-  class ParseResult < Struct.new(:nodes, :rest, :message, :fail_rest)
+  class ParseResult < Struct.new(:nodes, :rest, :message, :fail_rest, :start_idx, :end_idx)
     def success?
       not nodes.nil?
-    end
-    def pos
-      rest.nil? ? -1 : rest.car.start_idx
     end
     def deeper(r)
       if r.nil? or r.fail_rest.offset < fail_rest.offset
@@ -317,11 +318,11 @@ module CCParsec
       end
     end
     def fail_result
-      ParseResult.new(nil, rest, message, fail_rest)
+      ParseResult.new(nil, rest, message, fail_rest, start_idx, end_idx)
     end
-    def to_tree
+    def to_sexp
       {success?: success?,
-       nodes: nodes && nodes.map { |n| n.to_tree },
+       nodes: nodes && nodes.map { |n| n.to_sexp},
        message: message,
        rest: rest,
        fail_rest: fail_rest}
@@ -333,34 +334,35 @@ module CCParsec
     def leaf?
       children.nil?
     end
-    def to_tree
+    def to_sexp
       if children.nil?
         "#{value}"
       else
-        nodes = children.map { |n| n.to_tree }
-        nodes.unshift(type)
+        nodes = children.map { |n| n.to_sexp }
+        nodes.unshift("#{type}(#{start_idx}-#{end_idx})".to_sym)
       end
+    end
+    def leaf_value
+      if children.nil? or children.length != 1 or not children.first.leaf?
+        raise "can't get leaf_value of #{to_sexp}"
+      end
+      children.first.value
     end
     class << self
       def make_leaf(tok)
-        n = Node.new
-        n.value=tok.text
-        n.start_idx=tok.start_idx
-        n.end_idx=tok.end_idx
-        n
-      end
-      def make_node(type, children)
-        n = Node.new
-        if children.nil? or children.empty?
-          n.start_idx = -1
-          n.end_idx = -1
-        else
-          n.start_idx = children.first.start_idx
-          n.end_idx = children.last.end_idx
+        Node.new.tap do |n|
+          n.value=tok.text
+          n.start_idx=tok.start_idx
+          n.end_idx=tok.end_idx
         end
-        n.type = type
-        n.children = children
-        n
+      end
+      def make_node(type, children, start_idx, end_idx)
+        Node.new.tap do |n|
+          n.start_idx = start_idx
+          n.end_idx = end_idx
+          n.type = type
+          n.children = children
+        end
       end
     end
   end
@@ -397,15 +399,16 @@ module CCParsec
       toks = @scanner.scan(str).filter_comment
       #pp toks.to_list
       r = @parser.parse(toks, Stack.new)
-      #pp r.to_tree
+      #pp r.to_sexp
       if r.rest.eof?
         r
       else
         if r.message.nil?
-          fr = ParseResult.new
-          fr.message = "expect <<EOF>>"
-          fr.rest = r.rest
-          fr
+          ParseResult.new.tap do |fr|
+            fr.message = "expect <<EOF>>"
+            fr.rest = r.rest
+            fr.fail_rest = r.rest
+          end
         else
           r.fail_result
         end

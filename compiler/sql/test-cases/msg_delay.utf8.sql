@@ -3,7 +3,7 @@ create table MESSAGE_NOTIFY_TASK
    PK_ID                varchar2(32)         not null,
    FLIGHT_ID            varchar2(32)         not null,
    MSG_TYPE             varchar2(32)         not null,
-   MSG_CONTENT          varchar2(1024),
+   MSG_CONTENT          varchar2(1024)       default null,
    PLAN_SEND_TIME       date                 not null,
    constraint PK_MESSAGE_NOTIFY_TASK primary key (PK_ID)
 );

@@ -18,7 +18,7 @@ string = <str>.
 
 create-table-stm =
   'CREATE' 'TABLE' table '('
-    (@,+ ',' create-table-item)
+    table-items:(@,+ ',' create-table-item)
   ')'.
 
 table = table:(schema-prefix table-name).
@@ -31,9 +31,9 @@ create-table-item = (@or column_definition:column-definition
 
 column-definition =
   simple-column-name DataType
-  (@* column-level-constraint)
-  (@? (@? 'WITH') 'DEFAULT' DefaultConstantExpression)
-  (@* column-level-constraint).
+  constraints:(@* column-level-constraint)
+  default:(@? (@? 'WITH') 'DEFAULT' DefaultConstantExpression)
+  constraints:(@* column-level-constraint).
 DataType =
   (@or character-datatype
        number-datatype
@@ -49,18 +49,22 @@ datetime-datatype =
 large-object-datatype =
   (@or blob:'BLOB' clob:'CLOB' nclob:'NCLOB' bfile:'BFILE').
 size = /\d+/.
-;DataType = identifier (@? '(' identifier ')'). ; TODO
 DefaultConstantExpression =
-  (@or 'NULL'
-       ('CURRENT' (@or 'SCHEMA' 'SQLID'))
-       'USER' 'CURRENT_USER' 'SESSION_USER' 'CURRENT_ROLE'
-       'DATE'
-       'TIME'
-       'TIMESTAMP'
-       ('CURRENT' 'DATE') 'CURRENT_DATE'
-       ('CURRENT' 'TIME') 'CURRENT_TIME'
-       ('CURRENT' 'TIMESTAMP') 'CURRENT_TIMESTAMP'
-       ;*literal*;).
+  (@or null:'NULL'
+       ('CURRENT' (@or current_schema:'SCHEMA'
+                       current_sqlid:'SQLID'))
+       user:'USER'
+       current_user:'CURRENT_USER'
+       session_user:'SESSION_USER'
+       current_role:'CURRENT_ROLE'
+       date:'DATE'  ; date == current_date ?
+       time:'TIME'
+       timestamp:'TIMESTAMP'
+       current_date:('CURRENT' 'DATE') current_date:'CURRENT_DATE'
+       current_time:('CURRENT' 'TIME') current_time:'CURRENT_TIME'
+       current_timestamp:('CURRENT' 'TIMESTAMP')
+       current_timestamp:'CURRENT_TIMESTAMP'
+       #|literal:literal|#).
 
 ;literal = ??TODO
 
@@ -88,12 +92,12 @@ on-update =
   'ON' 'UPDATE' (@or ('NO' 'ACTION') 'RESTRICT').
 
 table-level-constraint =
-  (@? 'CONSTRAINT' constraint-name)
+  name:(@? 'CONSTRAINT' constraint-name)
   (@or ; check:('CHECK' search-condition)  ; TODO
        primary_key:('PRIMARY' 'KEY' '(' simple-column-names ')')
        unique:('UNIQUE' '(' simple-column-names ')')
        foreign_key:('FOREIGN' 'KEY' '(' simple-column-names ')'
-                              references-clause)).
+                              ref:references-clause)).
 
 ;;; COMMENT
 
@@ -112,23 +116,23 @@ comment-stm =
 create-index-stm =
   'CREATE' index_type:(@? (@or unique:'UNIQUE' bitmap:'BITMAP')) 'INDEX'
   object:(schema-prefix identifier) 'ON'
-  (@or ;*cluster-index-clause*;
+  (@or #|cluster-index-clause|#
        table-index-clause
-       ;*bitmap-join-index-clause*;).
+       #|bitmap-join-index-clause|#).
 
 column = t_alias:(@? identifier '.') simple-column-name.
 
 table-index-clause =
   table t_alias:(@? identifier) '('
     indexes:(@,+ ',' index:(index_expr (@? (@or asc:'ASC' desc:'DESC'))))
-  ')' ;*(@? index_properties)*;.
+  ')' #|(@? index_properties)|#.
 
-index_expr = (@or column ;*column_expression*;).
+index_expr = (@or column #|column_expression|#).
 
 ;;; GRANT
 
 grant-stm =
-  'GRANT' (@or ;*grant-system-privileges*;
+  'GRANT' (@or #|grant-system-privileges|#
                grant-object-privileges).
 
 grant-object-privileges =
@@ -155,4 +159,4 @@ create-synonym-stm =
   'CREATE' replace_option:(@? replace:'OR' 'REPLACE')
            public_option:(@? public:'PUBLIC')
   'SYNONYM' synonym:(schema-prefix identifier)
-  'FOR' object:(schema-prefix identifier ;*(@? '@' dblink)*;).
+  'FOR' object:(schema-prefix identifier #|(@? '@' dblink)|#).
