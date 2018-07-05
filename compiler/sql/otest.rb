@@ -10,5 +10,7 @@ module TestOracle
   pp ast.to_sexp
 
   puts '### analyse ###'
-  pp Oracle::analyse(code).to_sexp
+  res = Oracle::analyse(code)
+  pp res.to_sexp
+  Oracle::output_html('out.html', code, res.errs)
 end

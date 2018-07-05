@@ -3,6 +3,113 @@ require './match'
 
 module Oracle
 
+  def parse(code)
+    Analyser.new.parse(code)
+  end
+
+  def analyse(code)
+    Analyser.new.analyse(code)
+  end
+
+  class HtmlTag
+    def initialize
+      @levels = []
+      @messages = []
+    end
+    def add_stag(level)
+      unless @levels.include?(level)
+        @levels << level
+      end
+    end
+    def add_etag(level, message)
+      @messages << [level, message]
+    end
+    def to_html
+      etag = if @messages.empty?
+        ""
+      else
+        message_html = @messages.map do |l, m|
+          "<li class=\"#{l}-message\">#{m}</li>"
+        end.join
+        "<span class=\"tooltiptext\"><ul>#{message_html}</ul></span></span>"
+      end
+      stag = if @levels.empty?
+        ""
+      else
+        "<span class=\"tooltip #{@levels.join(" ")}\">"
+      end
+      etag + stag
+    end
+  end
+
+  def output_html(fn, code, errs)
+    insert_hash = Hash.new {|h, k| h[k] = HtmlTag.new }
+    errs.each do |err|
+      sidx = err.node.start_idx
+      insert_hash[sidx].add_stag(err.level)
+      eidx = err.node.end_idx
+      insert_hash[eidx].add_etag(err.level, err.message)
+    end
+    insert_hash.sort.reverse.each do |idx, tag|
+      code = code.insert(idx, tag.to_html)
+    end
+    style = <<EOF
+<style>
+  .tooltip {
+    position: relative;
+    display: inline-block;
+    border-bottom: 1px dotted black;
+  }
+  .tooltip .tooltiptext {
+    visibility: hidden;
+    white-space: normal;
+    width: 400px;
+    background-color: rgba(0.3, 0.3, 0.3, 0.8);
+    border-radius: 3px;
+    padding: 5px 10px;
+    /* Position the tooltip */
+    position: absolute;
+    z-index: 1;
+  }
+  .tooltip .tooltiptext ul {
+    margin: 3px;
+    padding: 0 14px;
+  }
+  .tooltip .tooltiptext .warning-message {
+    color: #ff9
+  }
+  .tooltip .tooltiptext .error-message {
+    color: #f99
+  }
+  .tooltip:hover .tooltiptext {
+      visibility: visible;
+  }
+  .code {
+    font-family: monospace;
+    white-space: pre;
+    font-size: 14px;
+    line-height: 1.4em;
+    padding: 3px 13px;
+  }
+  .warning {
+    background-color: #ff9;
+  }
+  .error {
+    background-color: #f99;
+  }
+</style>
+EOF
+    num_error = errs.count{|e| e.level == :error }
+    num_warning = errs.count{|e| e.level == :warning }
+    summary = "<div class=\"code\">Summary: #error=#{num_error}, #warning=#{num_warning}</div><hr>"
+    html = "<div class=\"code\">#{code}</div>"
+    IO.write(fn, style + summary + html)
+  end
+
+  module_function :parse
+  module_function :analyse
+  module_function :output_html
+
   class Analyser
     include CCParsec::Match
 
@@ -162,7 +269,7 @@ module Oracle
         type :references_clause do
           not_implemented(n_constraint)
         end
-      end
+      end.tap{|c| res.env_set(name, c, n_name) unless name.nil? }
     end
 
     def value_of_table_level_constraint(n_name, n_constraint, res)
@@ -179,7 +286,7 @@ module Oracle
         type :foreign_key do |*n_colnames, n_ref|
           not_implemented(n_constraint)
         end
-      end
+      end.tap{|c| res.env_set(name, c, n_name) unless name.nil? }
     end
 
     def interp_create_synonym(n_replace_option, n_public_option,
@@ -201,25 +308,14 @@ module Oracle
 
   end
 
-  def parse(code)
-    Analyser.new.parse(code)
-  end
-
-  def analyse(code)
-    Analyser.new.analyse(code)
-  end
-
-  module_function :parse
-  module_function :analyse
-
   class AnalysisResult < Struct.new(:env, :errs)
     def initialize
       self.env = {}
       self.errs = []
     end
-    def env_set(name, value)
+    def env_set(name, value, node = nil)
       if env.has_key?(name)
-        error("#{name} is defined.", value.node)
+        error("#{name} is defined.", node || value.node)
         return
       end
       env[name] = value
@@ -526,11 +622,19 @@ module Oracle
   class AnalysisRules
     class << self
       rules = []
-      define_method :rule do |name, &block|
-        rules << [name, block]
+      define_method :rule do |&block|
+        rules << block
+      end
+      define_method :ruleFor do |cls, &block|
+        proc = Proc.new do |res|
+          res.each cls do |name, obj|
+            block.call(name, obj, res)
+          end
+        end
+        rules << proc
       end
       define_method :apply do |res|
-        rules.each do |name, block|
+        rules.each do |block|
           block.call(res)
         end
       end
@@ -540,59 +644,55 @@ module Oracle
 
   class AnalysisRules
 
-    rule :primary_key_name do |res|
-      res.each Table do |name, table|
-        if table.primary_key.nil?
-          if table.creating?
-            res.warning("missing primary key", table.node)
-          end
-        else
-          pk_names, node = table.primary_key
-          unless pk_names.find{|pk| not pk.upcase.start_with?("PK_") }.nil?
-            res.warning("primary key should start with \"PK_\"", node)
-          end
+    # primary key name
+    ruleFor Table do |name, table, res|
+      if table.primary_key.nil?
+        if table.creating?
+          res.warning("missing primary key", table.node)
+        end
+      else
+        pk_names, node = table.primary_key
+        unless pk_names.find{|pk| not pk.upcase.start_with?("PK_") }.nil?
+          res.warning("primary key should start with \"PK_\"", node)
         end
       end
     end
 
-    rule :primary_key_constraint do |res|
-      res.each Table do |name, table|
-        pk_cstr_name = "PK_#{name}".upcase
-        pk_constraints = [
-          table.constraints.select{|c| c.type == :primary_key },
-          table.columns.map{|col| col.constraints.select{|c| c.type == :primary_key } }
-        ].flatten
-        pk_constraints.each do |c|
-          unless c.name.nil? or c.name.upcase == pk_cstr_name
-            res.warning("primary key constraint name should be #{pk_cstr_name}",
-                        c.node)
-          end
+    # primary key constraint
+    ruleFor Table do |name, table, res|
+      pk_cstr_name = "PK_#{name}".upcase
+      pk_constraints = [
+        table.constraints.select{|c| c.type == :primary_key },
+        table.columns.map{|col| col.constraints.select{|c| c.type == :primary_key } }
+      ].flatten
+      pk_constraints.each do |c|
+        unless c.name.nil? or c.name.upcase == pk_cstr_name
+          res.warning("primary key constraint name should be #{pk_cstr_name}",
+                      c.node)
         end
       end
     end
 
-    rule :comments do |res|
-      res.each Table do |name, table|
-        if table.creating? and table.comment.nil?
-          res.warning("table #{name} needs a comment", table.node)
-        end
-        table.creating_columns.each do |column|
-          if column.comment.nil?
-            res.warning("column #{name}.#{column.name} needs a comment", table.node)
-          end
+    # comments
+    ruleFor Table do |name, table, res|
+      if table.creating? and table.comment.nil?
+        res.warning("table #{name} needs a comment", table.node)
+      end
+      table.creating_columns.each do |column|
+        if column.comment.nil?
+          res.warning("column #{name}.#{column.name} needs a comment", column.node)
         end
       end
     end
 
-    rule :default_null do |res|
-      res.each Table do |name, table|
-        table.creating_columns.each do |column|
-          if not column.default.nil? and
-            column.default.default_rule == :null and
-            column.not_null?
-            res.warning("column #{name}.#{column.name} is not null",
-                        column.default.node)
-          end
+    # default null
+    ruleFor Table do |name, table, res|
+      table.creating_columns.each do |column|
+        if not column.default.nil? and
+          column.default.default_rule == :null and
+          column.not_null?
+          res.error("column #{name}.#{column.name} is not null",
+                    column.default.node)
         end
       end
     end
@@ -600,6 +700,8 @@ module Oracle
     # TODO: check whether default value matchs datatype
 
     # TODO: check synonym for table
+
+    # TODO: check grant for table
 
   end
 
