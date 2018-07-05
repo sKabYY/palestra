@@ -31,9 +31,9 @@ create-table-item = (@or column_definition:column-definition
 
 column-definition =
   simple-column-name DataType
-  constraints:(@* column-level-constraint)
-  default:(@? (@? 'WITH') 'DEFAULT' DefaultConstantExpression)
-  constraints:(@* column-level-constraint).
+  (@* constraint:column-level-constraint)
+  (@? (@? 'WITH') 'DEFAULT' default:DefaultConstantExpression)
+  (@* constraint:column-level-constraint).
 DataType =
   (@or character-datatype
        number-datatype
@@ -72,7 +72,7 @@ simple-column-name = identifier.
 simple-column-names = (@,+ ',' simple-column-name).
 
 column-level-constraint =
-  (@? 'CONSTRAINT' constraint-name)
+  name:(@? 'CONSTRAINT' constraint-name)
   (@or not_null:('NOT' 'NULL')
        ; check:('CHECK' search-condition)  ; TODO
        primary_key:('PRIMARY' 'KEY')
@@ -83,13 +83,17 @@ constraint-name = identifier.
 
 references-clause =
   'REFERENCES' table
-  (@? '(' simple-column-names ')')
+  column_names:(@? '(' simple-column-names ')')
   (@or ((@? on-delete) (@? on-update))
        ((@? on-update) (@? on-delete))).
 on-delete =
-  'ON' 'DELETE' (@or ('NO' 'ACTION') 'RESTRICT' 'CASCADE' 'SET NULL').
+  on_delete:('ON' 'DELETE' (@or on_action:('NO' 'ACTION')
+                                restrict:'RESTRICT'
+                                cascade:'CASCADE'
+                                set_null:'SET NULL')).
 on-update =
-  'ON' 'UPDATE' (@or ('NO' 'ACTION') 'RESTRICT').
+  on_update:('ON' 'UPDATE' (@or no_action:('NO' 'ACTION')
+                                restrict:'RESTRICT')).
 
 table-level-constraint =
   name:(@? 'CONSTRAINT' constraint-name)
@@ -117,7 +121,7 @@ create-index-stm =
   'CREATE' index_type:(@? (@or unique:'UNIQUE' bitmap:'BITMAP')) 'INDEX'
   object:(schema-prefix identifier) 'ON'
   (@or #|cluster-index-clause|#
-       table-index-clause
+       table_index_clause:table-index-clause
        #|bitmap-join-index-clause|#).
 
 column = t_alias:(@? identifier '.') simple-column-name.

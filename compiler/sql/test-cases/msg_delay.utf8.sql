@@ -5,7 +5,12 @@ create table MESSAGE_NOTIFY_TASK
    MSG_TYPE             varchar2(32)         not null,
    MSG_CONTENT          varchar2(1024)       default null,
    PLAN_SEND_TIME       date                 not null,
-   constraint PK_MESSAGE_NOTIFY_TASK primary key (PK_ID)
+   constraint PK_MESSAGE_NOTIFY_TASK1 primary key (FLIGHT_ID),
+   constraint PK_MESSAGE_NOTIFY_TASK primary key (HA_ID),
+   constraint PK_MESSAGE_NOTIFY_TASK primary key (MSG_TYPE),
+   HEHE varchar2(32) primary key not null,
+   pLAN_SEND_TIME       date                 not null,
+   HAHA varchar2(32) not null default null
 );
 
 comment on table MESSAGE_NOTIFY_TASK is
