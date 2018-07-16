@@ -3,6 +3,8 @@
    (case-sensitive #t)
  )
 
+ (define emit? #f)  ; emit assembly code?
+
 (load "compiler.ss")
 (load "a15-wrapper.ss")   ; defines syntactic forms and procedures
 (load "tests15.ss")
@@ -48,11 +50,11 @@
   (tracer #t)
   (let ([src (list-ref tests idx)])
     (pretty-print src)
-    (test-one src #t)))
+    (test-one src emit?)))
 
 (define test
   (case-lambda
-    [() (test-all)]
+    [() (test-all emit?)]
     [(idx) (test-idx idx)]))
 
 ;(trusted-passes #t)
