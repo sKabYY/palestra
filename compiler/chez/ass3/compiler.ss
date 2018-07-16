@@ -148,7 +148,7 @@
       [,e #f]))
 
   (define (make-jump l tail)
-    (if (jump? tail) tail`(,(add-dec! l tail))))
+    (if (jump? tail) tail `(,(add-dec! l tail))))
 
   (define (make-c-jump tail) (make-jump 'c tail))
   (define (make-a-jump tail) (make-jump 'a tail))
@@ -208,6 +208,7 @@
       (if (= n 0) (void) (begin (proc) (times proc (- n 1)))))
     (let ([max-count (apply max (map (lambda (l) (string->number (extract-suffix l))) label*))])
       (times (lambda () (unique-label 'skip)) max-count)))
+
   (match pgm
     [(letrec ([,label* ,lmbd*] ...) ,tail) (skip-used-label label*)])
 
