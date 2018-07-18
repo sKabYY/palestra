@@ -70,6 +70,6 @@
        (test-last #t)
        (k (void)))
      (lambda ()
-       (test)
-       ;(test-idx 100)
+       ;(test)
+       (test-idx 100)
        ))))
