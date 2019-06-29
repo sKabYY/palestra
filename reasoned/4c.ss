@@ -9,15 +9,9 @@
     [(== c 'blue)]))
 
 (define (noto g)
-  (condu
+  (conda
     [g *u]
-    [*s]))
-
-(dummy
-  (run* (A B)
-    (coloro A)
-    (coloro B)
-    (noto (== A B))))
+    [else *s]))
 
 (pretty-print
   (run* (A B C D E)
@@ -32,5 +26,4 @@
     (noto (== A E))
     (noto (== B C))
     (noto (== C D))
-    (noto (== D E))
-    ))
+    (noto (== D E))))

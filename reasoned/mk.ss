@@ -2,13 +2,14 @@
 
 ;;; assoc
 
-;(define-structure (var name))
+(define-structure (var name))
 ;(define (var name) (make-var name))
-(define-structure (var name idx))
 (define var (let ([idx 0])
               (lambda (name)
                 (set! idx (+ idx 1))
-                (make-var name idx))))
+                (make-var (string->symbol
+                            (string-append
+                              (symbol->string name) "/" (number->string idx)))))))
 
 (define (make-assoc) '())
 (define (extend-assoc ass v1 v2) (cons (cons v1 v2) ass))
@@ -31,31 +32,36 @@
 
 ;;; stream
 
-(define-structure (stream fst get-rst))
+(define-structure (stream car get-cdr))
 (define (empty-stream) '())
 (define (stream-of e) (make-stream e (delay (empty-stream))))
-(define (stream-rst g) (force (stream-get-rst g)))
-(define (stream-null? g) (null? g))
-(define (stream-map f g)
-  (if (stream-null? g)
+(define (stream-cdr s) (force (stream-get-cdr s)))
+(define (stream-null? s) (null? s))
+(define (stream-map f s)
+  (if (stream-null? s)
     (empty-stream)
-    (make-stream (f (stream-fst g)) (delay (stream-map f (stream-rst g))))))
-(define (stream-append g1 dg2)
-  (if (stream-null? g1)
-    (force dg2)
-    (make-stream (stream-fst g1) (delay (stream-append (stream-rst g1) dg2)))))
-(define (stream-flatten ss)
-  (if (stream-null? ss)
-    (empty-stream)
-    (stream-append (stream-fst ss) (delay (stream-flatten (stream-rst ss))))))
+    (make-stream (f (stream-car s)) (delay (stream-map f (stream-cdr s))))))
+(define (stream-append s1 ds2)
+  (if (stream-null? s1)
+    (force ds2)
+    (make-stream (stream-car s1) (delay (stream-append (stream-cdr s1) ds2)))))
+(define (stream-interleave s1 ds2)
+  (if (stream-null? s1)
+    (force ds2)
+    (make-stream (stream-car s1) (delay (stream-interleave (force ds2) (delay (stream-cdr s1)))))))
 
-(define (stream-take n s)
-  (if (or (stream-null? s) (and n (= n 0)))
+(define (stream-take n ds)
+  (if (and n (= n 0))
     '()
-    (cons (stream-fst s) (stream-take (and n (- n 1)) (stream-rst s)))))
+    (let ([s (force ds)])
+      (if (stream-null? s)
+        '()
+        (cons (stream-car s) (stream-take (and n (- n 1)) (delay (stream-cdr s))))))))
 
 ;;; goal
 ;;; typeof(goal): assoc -> stream of assoc
+
+(define (apply-goal g) (g (make-assoc)))
 
 (define *s (lambda (ass) (stream-of ass)))
 (define *u (lambda (ass) (empty-stream)))
@@ -64,58 +70,94 @@
 
 (define (== x y) (lambda (ass) (stream-of-nullable (unify ass x y))))
 
-(define (join g1 g2)
-  (lambda (ass)
-    (let ([s1 (g1 ass)])
-      (stream-flatten (stream-map (lambda (a) (g2 a)) s1)))))
+(define (join/merge merge s g)
+  (if (stream-null? s)
+    (empty-stream)
+    (merge (g (stream-car s)) (delay (join/merge merge (stream-cdr s) g)))))
 
-(define-syntax conj
+(define (join s g) (join/merge stream-append s g))
+
+(define (joini s g) (join/merge stream-interleave s g))
+
+(define-syntax all
   (syntax-rules ()
+    [(_) *s]
     [(_ g) g]
-    [(_ g1 g2) (join g1 g2)]
-    [(_ g1 g2 gs ...) (conj (conj g1 g2) gs ...)]))
+    [(_ g gs ...) (lambda (ass) (join (g ass) (all gs ...)))]))
+
+(define-syntax alli
+  (syntax-rules ()
+    [(_) *s]
+    [(_ g) g]
+    [(_ g gs ...) (lambda (ass) (joini (g ass) (all gs ...)))]))
+
+(define-syntax cond/if
+  (syntax-rules (else)
+    [(_ ifer) *u]
+    [(_ ifer [else g gs ...])
+     (cond/if ifer [g gs ...])]
+    [(_ ifer [g gs ...] c* ...)
+     (ifer g (all gs ...) (cond/if ifer c* ...))]))
+
+(define-syntax cond+
+  (syntax-rules ()
+    [(_ ifer [g gs ...] c* ...) (cond/if ifer [g gs ...] c* ...)]))
+
+(define-syntax ife
+  (syntax-rules ()
+    [(_ g1 g2 g3)
+     (lambda (ass)
+       (stream-append (join (g1 ass) g2) (delay (g3 ass))))]))
 
 (define-syntax conde
   (syntax-rules ()
-    [(_ [g gs ...]) (conj g gs ...)]
-    [(_ [g gs ...] c* ...)
+    [(_ c* ...) (cond+ ife c* ...)]))
+
+(define-syntax ifi
+  (syntax-rules ()
+    [(_ g1 g2 g3)
      (lambda (ass)
-       (stream-append ((conj g gs ...) ass) (delay ((conde c* ...) ass))))]))
+       (stream-interleave (join (g1 ass) g2) (delay (g3 ass))))]))
+
+(define-syntax condi
+  (syntax-rules ()
+    [(_ c* ...) (cond+ ifi c* ...)]))
+
+(define-syntax ifa
+  (syntax-rules ()
+    [(_ g1 g2 g3)
+     (lambda (ass)
+       (let ([s (g1 ass)])
+         (if (stream-null? s)
+           (g3 ass)
+           (join s g2))))]))
 
 (define-syntax conda
   (syntax-rules ()
-    [(_ [g gs ...]) (conj g gs ...)]
-    [(_ [g gs ...] [g* gs* ...] ...)
+    [(_ c* ...) (cond+ ifa c* ...)]))
+
+(define-syntax ifu
+  (syntax-rules ()
+    [(_ g1 g2 g3)
      (lambda (ass)
-       (let ([s (g ass)])
-         ((if (stream-null? s)
-            (conda [g* gs* ...] ...)
-            (conj g gs ...))
-           ass)))]))
+       (let ([s (g1 ass)])
+         (if (stream-null? s)
+           (g3 ass)
+           (g2 (stream-car s)))))]))
 
 (define-syntax condu
   (syntax-rules ()
-    [(_ [g gs ...]) (conj g gs ...)]
-    [(_ [g gs ...] [g* gs* ...] ...)
-     (lambda (ass)
-       (let ([s (g ass)])
-         ((if (stream-null? s)
-            (conda [g* gs* ...] ...)
-            (conj gs ...))
-           ass)))]))
+    [(_ c* ...) (cond+ ifu c* ...)]))
 
 (define-syntax let-fresh
   (syntax-rules ()
-    [(_ (v) e es ...)
-     (let ([v (var 'v)]) e es ...)]))
+    [(_ (v* ...) e e* ...)
+     (let ([v* (var 'v*)] ...) e e* ...)]))
 
 (define-syntax fresh
   (syntax-rules ()
-    [(_ (v) g gs ...)
-     (let-fresh (v) (conj g gs ...))]
-    [(_ (v0 v1 vs ...) g gs ...)
-     (fresh (v0)
-       (fresh (v1 vs ...) g gs ...))]))
+    [(_ (v* ...) g g* ...)
+     (let-fresh (v* ...) (all g g* ...))]))
 
 ;;; run
 
@@ -123,8 +165,11 @@
   (syntax-rules ()
     [(_ n (q) g gs ...)
      (let-fresh (q)
-       (let ([s ((conj g gs ...) (make-assoc))])
-         (map reify (stream-take n (stream-map (lambda (ass) (walk q ass)) s)))))]
+       (map reify
+         (stream-take n
+           (delay
+             (stream-map (lambda (ass) (walk q ass))
+               (apply-goal (all g gs ...)))))))]
     [(_ n (q qs ...) g gs ...)
      (run n (x) (fresh (q qs ...) g gs ... (== x (list q qs ...))))]))
 (define-syntax run*

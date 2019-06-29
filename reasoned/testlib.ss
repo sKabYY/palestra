@@ -15,5 +15,6 @@
              (pretty-print ans)
              (printf "But get: ")
              (pretty-print v)
+             (raise 'terminated)
              (newline)))))]
-    [(_ name e ans) (test e ans)]))
+    [(_ name e ans) (begin (printf "Test: ~a~n" name) (test e ans))]))
