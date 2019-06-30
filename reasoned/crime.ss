@@ -18,7 +18,7 @@
   (syntax-rules ()
     [(_ v1 v2) (noto (== v1 v2))]
     [(_ v1 v2 v* ...)
-     (fresh ()
+     (all
        (noto (== v1 v2) (== v1 v*) ...)
        (distincto v2 v* ...))]))
 
@@ -29,7 +29,7 @@
 (define-syntax uniq-ppl
   (syntax-rules ()
     [(_ p* ...)
-     (fresh ()
+     (all
        (:: p* person) ...
        (distincto p* ...))]))
 

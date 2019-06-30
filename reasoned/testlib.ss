@@ -13,8 +13,8 @@
              (printf "ERROR!!!!!!!!!!!!!!!!!!!!!!!!!!!!~n")
              (printf "Expect: ")
              (pretty-print ans)
-             (printf "But get: ")
+             (printf "ButGet: ")
              (pretty-print v)
-             (raise 'terminated)
+             ;(raise 'terminated)
              (newline)))))]
     [(_ name e ans) (begin (printf "Test: ~a~n" name) (test e ans))]))

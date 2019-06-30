@@ -3,7 +3,6 @@
 ;;; assoc
 
 (define-structure (var name))
-;(define (var name) (make-var name))
 (define var (let ([idx 0])
               (lambda (name)
                 (set! idx (+ idx 1))
@@ -13,16 +12,26 @@
 
 (define (make-assoc) '())
 (define (extend-assoc ass v1 v2) (cons (cons v1 v2) ass))
-(define (unify ass v1 v2)
+(define (unify/ext ext ass v1 v2)
   (let ([v1 (walk v1 ass)]
         [v2 (walk v2 ass)])
     (cond
-      [(and (pair? v1) (pair? v2) (unify ass (car v1) (car v2)))
-       => (lambda (u) (unify u (cdr v1) (cdr v2)))]
-      [(var? v1) (extend-assoc ass v1 v2)]
-      [(var? v2) (extend-assoc ass v2 v1)]
+      [(and (pair? v1) (pair? v2) (unify/ext ext ass (car v1) (car v2)))
+       => (lambda (a) (unify/ext ext a (cdr v1) (cdr v2)))]
+      [(var? v1) (ext ass v1 v2)]
+      [(var? v2) (ext ass v2 v1)]
       [(eqv? v1 v2) ass]
       [else #f])))
+(define (unify ass v1 v2) (unify/ext extend-assoc ass v1 v2))
+(define (unify^ ass v1 v2)
+  (letrec ([occurs^ (lambda (ass v1 v2)
+                      (cond
+                        [(pair? v2) (or (occurs^ ass v1 (car v2)) (occurs^ ass v1 (cdr v2)))]
+                        [(and (var? v2) (eq? v1 v2)) #t]
+                        [else #f]))]
+           [extend-assoc^ (lambda (ass v1 v2) (and (not (occurs^ ass v1 v2)) (extend-assoc ass v1 v2)))])
+    (unify/ext extend-assoc^ ass v1 v2)))
+
 (define (walk v ass)
   (cond
     [(pair? v) (cons (walk (car v) ass) (walk (cdr v) ass))]
@@ -66,9 +75,10 @@
 (define *s (lambda (ass) (stream-of ass)))
 (define *u (lambda (ass) (empty-stream)))
 
-(define (stream-of-nullable e) (if e (stream-of e) (empty-stream)))
+(define (assoc->stream ass) (if ass (*s ass) (*u ass)))
 
-(define (== x y) (lambda (ass) (stream-of-nullable (unify ass x y))))
+(define (== x y) (lambda (ass) (assoc->stream (unify ass x y))))
+(define (==^ x y) (lambda (ass) (assoc->stream (unify^ ass x y))))
 
 (define (join/merge merge s g)
   (if (stream-null? s)

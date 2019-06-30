@@ -146,3 +146,11 @@
     (conde [*s] [*s])
     (fresh (x) (== q x)))
   '(_.0 _.0))
+
+(test "walk"
+  (run* (x)
+    (fresh (y z)
+      (== z 'a)
+      (== x y)
+      (== y `(a ,z c))))
+  '((a a c)))
