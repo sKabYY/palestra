@@ -1,0 +1,19 @@
+{
+    "version": "2.0.0",
+    "echoCommand": true,
+    "tasks": [
+        {
+            "label": "test-all",
+            "type": "shell",
+            "command": "petite",
+            "args": [
+                "--script",
+                "test-all.ss"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}

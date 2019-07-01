@@ -8,5 +8,6 @@
 (load "samples/samples.ss")
 
 (load "samples/ch6.ss")
+(load "samples/ch7.ss")
 (load "samples/ch9.ss")
 (load "samples/ch10.ss")
