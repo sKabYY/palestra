@@ -99,7 +99,7 @@
   (syntax-rules ()
     [(_) *s]
     [(_ g) g]
-    [(_ g gs ...) (lambda (ass) (joini (g ass) (all gs ...)))]))
+    [(_ g gs ...) (lambda (ass) (joini (g ass) (alli gs ...)))]))
 
 (define-syntax cond/if
   (syntax-rules (else)

@@ -154,3 +154,25 @@
       (== x y)
       (== y `(a ,z c))))
   '((a a c)))
+
+; not noto, just nota
+(define (nota g)
+  (conda
+    [g *u]
+    [else *s]))
+
+(test "nota goes right"
+  (run* (q)
+    (conde
+      [(== 'a q)]
+      [(== 'b q)])
+    (nota (== 'a q)))
+  '(b))
+
+(test "nota goes wrong"
+  (run* (q)
+    (nota (== 'a q))
+    (conde
+      [(== 'a q)]
+      [(== 'b q)]))
+  '())
