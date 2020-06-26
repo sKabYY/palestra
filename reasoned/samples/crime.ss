@@ -1,5 +1,4 @@
 (load "mk.ss")
-(load "mk.ss")
 (load "mklib.ss")
 
 (define-syntax dummy

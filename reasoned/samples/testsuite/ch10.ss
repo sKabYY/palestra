@@ -42,6 +42,17 @@
 
 (test
   (run* (q)
+    (fresh (x y)
+      (conda
+        [(== x y) (== 'split x)]
+        [else *s])
+      (== 'split x)
+      (== 'pea y))
+    (== #t q))
+  '())
+
+(test
+  (run* (q)
     (condu
       [alwayso *s]
       [else *u])
